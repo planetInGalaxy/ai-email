@@ -1,0 +1,19 @@
+{
+  "name": "codex-pushdeer-notifier",
+  "version": "0.1.0",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/planetInGalaxy/ai-email.git"
+  },
+  "type": "module",
+  "scripts": {
+    "check": "node --check plugins/codex-pushdeer-notifier/scripts/pushdeer-lib.mjs && node --check plugins/codex-pushdeer-notifier/scripts/pushdeer-notify.mjs && node --check plugins/codex-pushdeer-notifier/scripts/pushdeer-notify-event.mjs && node --check plugins/codex-pushdeer-notifier/scripts/pushdeer-stop-hook.mjs && node --check plugins/codex-pushdeer-notifier/scripts/setup-pushdeer-key.mjs",
+    "install:local": "node scripts/install-local.mjs",
+    "setup": "node scripts/install.mjs",
+    "uninstall:notifier": "node scripts/uninstall.mjs",
+    "plugin:validate": "node scripts/validate-plugin.mjs",
+    "config:show": "node plugins/codex-pushdeer-notifier/scripts/setup-pushdeer-key.mjs --show",
+    "notify:dry-run": "CODEX_PUSHDEER_DRY_RUN=1 node plugins/codex-pushdeer-notifier/scripts/pushdeer-notify.mjs --title 已完成PushDeer本地通知脚本dryrun验证当前不会真实发送消息"
+  }
+}

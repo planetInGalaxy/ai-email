@@ -1,0 +1,23 @@
+{
+  "name": "codex-pushdeer-notifier",
+  "version": "0.1.0",
+  "description": "Send concise PushDeer notifications after Codex turns complete.",
+  "author": {
+    "name": "Codex PushDeer Notifier contributors"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "PushDeer Notifier",
+    "shortDescription": "Notify when Codex finishes a turn.",
+    "longDescription": "Sends a concise PushDeer summary from the Codex notify event after a turn finishes without changing the original response.",
+    "developerName": "Codex PushDeer Notifier contributors",
+    "category": "Productivity",
+    "capabilities": [
+      "Automation"
+    ],
+    "defaultPrompt": [
+      "Configure PushDeer notifications for Codex.",
+      "Test the local PushDeer notification command."
+    ]
+  }
+}

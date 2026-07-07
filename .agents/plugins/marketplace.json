@@ -1,0 +1,20 @@
+{
+  "name": "codex-pushdeer",
+  "interface": {
+    "displayName": "Codex PushDeer"
+  },
+  "plugins": [
+    {
+      "name": "codex-pushdeer-notifier",
+      "source": {
+        "source": "local",
+        "path": "./plugins/codex-pushdeer-notifier"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
