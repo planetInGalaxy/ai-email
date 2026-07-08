@@ -9,6 +9,7 @@ import {
   DEFAULT_SUMMARY_MODEL,
   extractFinalTextFromPayload,
   extractTurnId,
+  formatDesp,
   hashText,
   loadConfig,
   logEvent,
@@ -18,7 +19,6 @@ import {
   sendPushDeer,
   summarizeFinalText,
   takeChars,
-  truncateDesp,
   wasAlreadySent,
 } from "./pushdeer-lib.mjs";
 
@@ -157,7 +157,10 @@ async function main() {
   const llmDescription = summarizeWithCodex({ finalText, notification });
   const pushText = llmDescription || fallbackSummary.desp;
   const config = loadConfig();
-  const pushDesp = truncateDesp(finalText, config.despMaxChars);
+  const pushDesp = formatDesp(finalText, {
+    maxChars: config.despMaxChars,
+    separator: config.despSeparator,
+  });
 
   await sendPushDeer({
     title: pushText,

@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   DEFAULT_DESP_MAX_CHARS,
+  DEFAULT_DESP_SEPARATOR,
   configPath as pushdeerConfigPath,
   loadConfig,
   redactText,
@@ -123,6 +124,12 @@ const checks = {
   despMaxChars: {
     ok: config.despMaxChars >= 0 && config.despMaxChars <= DEFAULT_DESP_MAX_CHARS,
     detail: `${config.despMaxChars} chars`,
+  },
+  despSeparator: {
+    ok: typeof config.despSeparator === "string",
+    detail: config.despSeparator
+      ? JSON.stringify(config.despSeparator)
+      : `disabled, default would be ${JSON.stringify(DEFAULT_DESP_SEPARATOR)}`,
   },
   notifierLog: logStatus(),
 };

@@ -83,6 +83,7 @@ if (args.show) {
     summaryModel: config.summaryModel,
     llmTimeoutMs: config.llmTimeoutMs,
     despMaxChars: config.despMaxChars,
+    despSeparator: config.despSeparator,
   }, null, 2));
   process.exit(0);
 }

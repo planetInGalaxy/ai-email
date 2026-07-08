@@ -8,6 +8,7 @@ export const APP_NAME = "codex-pushdeer-notifier";
 export const DEFAULT_SUMMARY_MODEL = "gpt-5.4-mini";
 export const DEFAULT_LLM_TIMEOUT_MS = 12_000;
 export const DEFAULT_DESP_MAX_CHARS = 300;
+export const DEFAULT_DESP_SEPARATOR = "\n-----\n";
 
 export function expandHome(value) {
   if (!value) return value;
@@ -149,6 +150,11 @@ export function loadConfig() {
       String(DEFAULT_DESP_MAX_CHARS),
     10,
   );
+  const despSeparator =
+    process.env.CODEX_PUSHDEER_DESP_SEPARATOR ??
+    config.despSeparator ??
+    config.desp_separator ??
+    DEFAULT_DESP_SEPARATOR;
 
   return {
     ...config,
@@ -159,6 +165,7 @@ export function loadConfig() {
       ? llmTimeoutMs
       : DEFAULT_LLM_TIMEOUT_MS,
     despMaxChars: normalizeDespMaxChars(despMaxChars),
+    despSeparator: normalizeDespSeparator(despSeparator),
   };
 }
 
@@ -220,10 +227,35 @@ export function normalizeDespMaxChars(value) {
   return Math.min(parsed, DEFAULT_DESP_MAX_CHARS);
 }
 
+export function normalizeDespSeparator(value) {
+  if (value === false || value === null) return "";
+  return String(value ?? DEFAULT_DESP_SEPARATOR).replace(/\\r/g, "\r").replace(/\\n/g, "\n");
+}
+
 export function truncateDesp(finalText, maxChars = DEFAULT_DESP_MAX_CHARS) {
   const normalizedMax = normalizeDespMaxChars(maxChars);
   if (normalizedMax <= 0) return "";
   return takeChars(String(finalText || ""), normalizedMax);
+}
+
+export function formatDesp(
+  finalText,
+  {
+    maxChars = DEFAULT_DESP_MAX_CHARS,
+    separator = DEFAULT_DESP_SEPARATOR,
+  } = {},
+) {
+  const text = String(finalText || "");
+  const normalizedMax = normalizeDespMaxChars(maxChars);
+  if (!text || normalizedMax <= 0) return "";
+
+  const normalizedSeparator = normalizeDespSeparator(separator);
+  if (!normalizedSeparator) return takeChars(text, normalizedMax);
+
+  const separatorText = takeChars(normalizedSeparator, normalizedMax);
+  const remainingChars = normalizedMax - charLength(separatorText);
+  if (remainingChars <= 0) return separatorText;
+  return `${separatorText}${takeChars(text, remainingChars)}`;
 }
 
 export function fallbackDescription(finalText) {

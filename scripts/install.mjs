@@ -8,10 +8,12 @@ import { stdin as input, stdout as output } from "node:process";
 import { fileURLToPath } from "node:url";
 import {
   DEFAULT_DESP_MAX_CHARS,
+  DEFAULT_DESP_SEPARATOR,
   configPath as pushdeerConfigPath,
   DEFAULT_LLM_TIMEOUT_MS,
   loadConfig as loadPushdeerConfig,
   normalizeDespMaxChars,
+  normalizeDespSeparator,
   saveConfigPatch,
 } from "../plugins/codex-pushdeer-notifier/scripts/pushdeer-lib.mjs";
 import { chooseSummaryModel } from "./model-utils.mjs";
@@ -286,10 +288,35 @@ function configureDespMaxChars() {
   console.log(`Configured PushDeer desp max length ${despMaxChars} chars`);
 }
 
+function configureDespSeparator() {
+  const hasExplicitValue =
+    args["desp-separator"] !== undefined ||
+    args.separator !== undefined ||
+    args["no-desp-separator"];
+
+  if (!hasExplicitValue) {
+    return;
+  }
+
+  const rawValue = args["no-desp-separator"]
+    ? ""
+    : args["desp-separator"] ?? args.separator ?? DEFAULT_DESP_SEPARATOR;
+  const despSeparator = normalizeDespSeparator(rawValue);
+
+  if (args["dry-run"]) {
+    console.log(`[dry-run] write despSeparator=${JSON.stringify(despSeparator)} to ${pushdeerConfigPath()}`);
+    return;
+  }
+
+  saveConfigPatch({ despSeparator });
+  console.log(`Configured PushDeer desp separator ${JSON.stringify(despSeparator)}`);
+}
+
 installPlugin();
 await configureNotify();
 configureSummaryModel();
 configureDespMaxChars();
+configureDespSeparator();
 configurePushDeerKey();
 
 console.log("");

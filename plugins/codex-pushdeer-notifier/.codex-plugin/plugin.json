@@ -1,6 +1,6 @@
 {
   "name": "codex-pushdeer-notifier",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Send concise PushDeer notifications after Codex turns complete.",
   "author": {
     "name": "Codex PushDeer Notifier contributors"
