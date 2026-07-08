@@ -38,11 +38,11 @@ node scripts/install.mjs --summary-model gpt-5.5
 
 ## Install
 
-Clone this repository, then run the installer. The GitHub repository is still `ai-email` until the repository itself is renamed:
+Clone this repository, then run the installer:
 
 ```bash
-git clone https://github.com/planetInGalaxy/ai-email.git
-cd ai-email
+git clone https://github.com/planetInGalaxy/agentping.git
+cd agentping
 node scripts/install.mjs
 ```
 
@@ -294,12 +294,12 @@ agentping@agentping
 For team distribution, ask users to clone this repository and run:
 
 ```bash
-git clone https://github.com/planetInGalaxy/ai-email.git
-cd ai-email
+git clone https://github.com/planetInGalaxy/agentping.git
+cd agentping
 node scripts/install.mjs
 ```
 
-Pin releases with Git tags such as `v0.4.0`.
+Pin releases with Git tags such as `v0.4.1`.
 
 ## Troubleshooting
 

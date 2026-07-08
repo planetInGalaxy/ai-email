@@ -46,8 +46,8 @@ const legacyNotifyScript = path.join(
 const setupScript = path.join(pluginRoot, "scripts", "setup-pushdeer-key.mjs");
 const marketplaceName = "agentping";
 const pluginName = "agentping";
-const legacyMarketplaceName = "codex-pushdeer";
 const legacyPluginName = "codex-pushdeer-notifier";
+const legacyMarketplaceNames = ["codex-pushdeer", "aimp-local"];
 
 function parseArgs(argv = process.argv.slice(2)) {
   const args = { _: [] };
@@ -235,7 +235,9 @@ function installPlugin() {
 
   run("codex", ["plugin", "add", `${pluginName}@${marketplaceName}`]);
   console.log(`Installed ${pluginName}@${marketplaceName}`);
-  run("codex", ["plugin", "remove", `${legacyPluginName}@${legacyMarketplaceName}`], { allowFailure: true });
+  for (const legacyName of legacyMarketplaceNames) {
+    run("codex", ["plugin", "remove", `${legacyPluginName}@${legacyName}`], { allowFailure: true });
+  }
 }
 
 function configurePushDeerKey() {

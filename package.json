@@ -1,6 +1,6 @@
 {
   "name": "agentping",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Notify when your AI agents finish and send concise completion summaries.",
   "private": false,
   "keywords": [
@@ -16,7 +16,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/planetInGalaxy/ai-email.git"
+    "url": "git+https://github.com/planetInGalaxy/agentping.git"
   },
   "type": "module",
   "bin": {
