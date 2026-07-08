@@ -18,7 +18,6 @@ import {
   safeJsonParse,
   sendPushDeer,
   summarizeFinalText,
-  takeChars,
   wasAlreadySent,
 } from "./pushdeer-lib.mjs";
 
@@ -65,11 +64,14 @@ function summarizeWithCodex({ finalText, notification }) {
   const config = loadConfig();
   const model = config.summaryModel || DEFAULT_SUMMARY_MODEL;
   const timeoutMs = config.llmTimeoutMs || DEFAULT_LLM_TIMEOUT_MS;
+  const summaryMinChars = config.summaryMinChars;
+  const summaryMaxChars = config.summaryMaxChars;
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-pushdeer-summary-"));
   const outputFile = path.join(tempDir, "summary.txt");
   const prompt = [
     "你是推送通知摘要器。根据用户问题和助手完整回答，生成一条中文推送描述。",
-    "要求：只输出摘要正文，不要标题、引号、编号或解释；必须概括完整回答的结果，不要截取开头；不超过60个汉字；信息越少越短，信息越多越概括；不要输出密钥、token或完整长路径。",
+    `期望长度：${summaryMinChars}到${summaryMaxChars}个汉字。`,
+    "要求：只输出摘要正文，不要标题、引号、编号或解释；必须概括完整回答的结果，不要截取开头；输出必须是语义完整的一句话，不要以半句话、顿号、连接词或省略号结尾；如果无法同时满足长度和完整性，以完整性优先，宁可略超也不要截断；不要输出密钥、token或完整长路径。",
   ].join("\n");
   const input = [
     "用户问题：",
@@ -124,7 +126,16 @@ function summarizeWithCodex({ finalText, notification }) {
 
     const summary = normalizeSummary(fs.readFileSync(outputFile, "utf8"));
     if (!summary) return "";
-    return charLength(summary) > 60 ? takeChars(summary, 60) : summary;
+    const summaryChars = charLength(summary);
+    if (summaryChars < summaryMinChars || summaryChars > summaryMaxChars) {
+      logEvent("info", "LLM summary outside configured length range", {
+        model,
+        summaryChars,
+        summaryMinChars,
+        summaryMaxChars,
+      });
+    }
+    return summary;
   } catch (error) {
     logEvent("warn", "LLM summary command errored", {
       model,
@@ -186,7 +197,7 @@ async function main() {
     return;
   }
 
-  const fallbackSummary = summarizeFinalText(finalText, notification);
+  const fallbackSummary = summarizeFinalText(finalText, config);
   const llmDescription = summarizeWithCodex({ finalText, notification });
   const pushText = llmDescription || fallbackSummary.desp;
   const pushDesp = formatDesp(finalText, {

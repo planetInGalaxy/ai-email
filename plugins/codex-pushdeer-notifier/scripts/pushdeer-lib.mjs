@@ -6,6 +6,8 @@ import path from "node:path";
 export const DEFAULT_ENDPOINT = "https://api2.pushdeer.com/message/push";
 export const APP_NAME = "codex-pushdeer-notifier";
 export const DEFAULT_SUMMARY_MODEL = "gpt-5.4-mini";
+export const DEFAULT_SUMMARY_MIN_CHARS = 30;
+export const DEFAULT_SUMMARY_MAX_CHARS = 60;
 export const DEFAULT_LLM_TIMEOUT_MS = 12_000;
 export const DEFAULT_DESP_MAX_CHARS = 300;
 export const DEFAULT_DESP_SEPARATOR = "\n-----\n";
@@ -137,6 +139,20 @@ export function loadConfig() {
     config.summaryModel ||
     config.summary_model ||
     DEFAULT_SUMMARY_MODEL;
+  const summaryMinChars = Number.parseInt(
+    process.env.CODEX_PUSHDEER_SUMMARY_MIN_CHARS ??
+      config.summaryMinChars ??
+      config.summary_min_chars ??
+      String(DEFAULT_SUMMARY_MIN_CHARS),
+    10,
+  );
+  const summaryMaxChars = Number.parseInt(
+    process.env.CODEX_PUSHDEER_SUMMARY_MAX_CHARS ??
+      config.summaryMaxChars ??
+      config.summary_max_chars ??
+      String(DEFAULT_SUMMARY_MAX_CHARS),
+    10,
+  );
   const llmTimeoutMs = Number.parseInt(
     process.env.CODEX_PUSHDEER_LLM_TIMEOUT_MS ||
       config.llmTimeoutMs ||
@@ -163,12 +179,14 @@ export function loadConfig() {
       String(DEFAULT_FINAL_WAIT_MS),
     10,
   );
+  const summaryBounds = normalizeSummaryCharBounds(summaryMinChars, summaryMaxChars);
 
   return {
     ...config,
     endpoint,
     pushkey,
     summaryModel,
+    ...summaryBounds,
     llmTimeoutMs: Number.isFinite(llmTimeoutMs) && llmTimeoutMs > 0
       ? llmTimeoutMs
       : DEFAULT_LLM_TIMEOUT_MS,
@@ -229,6 +247,26 @@ export function takeChars(value, maxChars) {
   return Array.from(String(value || "")).slice(0, maxChars).join("");
 }
 
+export function normalizeSummaryCharBounds(minValue, maxValue) {
+  let summaryMinChars = Number.parseInt(minValue, 10);
+  let summaryMaxChars = Number.parseInt(maxValue, 10);
+  if (!Number.isFinite(summaryMinChars) || summaryMinChars < 0) {
+    summaryMinChars = DEFAULT_SUMMARY_MIN_CHARS;
+  }
+  if (!Number.isFinite(summaryMaxChars) || summaryMaxChars <= 0) {
+    summaryMaxChars = DEFAULT_SUMMARY_MAX_CHARS;
+  }
+  summaryMinChars = Math.min(summaryMinChars, 500);
+  summaryMaxChars = Math.min(summaryMaxChars, 500);
+  if (summaryMaxChars < summaryMinChars) {
+    summaryMaxChars = summaryMinChars;
+  }
+  return {
+    summaryMinChars,
+    summaryMaxChars,
+  };
+}
+
 export function normalizeDespMaxChars(value) {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed)) return DEFAULT_DESP_MAX_CHARS;
@@ -273,14 +311,34 @@ export function formatDesp(
   return `${separatorText}${takeChars(text, remainingChars)}`;
 }
 
-export function fallbackDescription(finalText) {
-  const text = normalizeWhitespace(redactText(finalText));
-  if (!text) return "未提取到有效回答内容。";
-  return takeChars(text, 50);
+function firstCompleteSegment(text, maxChars) {
+  const chars = Array.from(String(text || ""));
+  let bestEnd = -1;
+  const punctuation = new Set(["。", "！", "？", "；", ".", "!", "?", ";"]);
+  for (let i = 0; i < chars.length && i < maxChars; i += 1) {
+    if (punctuation.has(chars[i])) bestEnd = i + 1;
+  }
+  if (bestEnd <= 0) return "";
+  return chars.slice(0, bestEnd).join("").trim();
 }
 
-export function summarizeFinalText(finalText) {
-  const description = fallbackDescription(finalText);
+export function fallbackDescription(finalText, options = {}) {
+  const text = normalizeWhitespace(redactText(finalText));
+  if (!text) return "未提取到有效回答内容。";
+  const { summaryMinChars, summaryMaxChars } = normalizeSummaryCharBounds(
+    options.summaryMinChars,
+    options.summaryMaxChars,
+  );
+  if (charLength(text) <= summaryMaxChars) return text;
+  const sentence = firstCompleteSegment(text, summaryMaxChars);
+  if (sentence && charLength(sentence) >= Math.min(summaryMinChars, summaryMaxChars)) {
+    return sentence;
+  }
+  return "回答已完成，但摘要模型未能及时生成；请查看下方原始回答内容。";
+}
+
+export function summarizeFinalText(finalText, options = {}) {
+  const description = fallbackDescription(finalText, options);
   return {
     title: description,
     desp: description,

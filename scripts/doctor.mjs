@@ -8,6 +8,8 @@ import {
   DEFAULT_DESP_MAX_CHARS,
   DEFAULT_DESP_SEPARATOR,
   DEFAULT_FINAL_WAIT_MS,
+  DEFAULT_SUMMARY_MAX_CHARS,
+  DEFAULT_SUMMARY_MIN_CHARS,
   configPath as pushdeerConfigPath,
   loadConfig,
   redactText,
@@ -122,6 +124,10 @@ const checks = {
   summaryModel: {
     ok: Boolean(modelSelection.model),
     detail: `${modelSelection.model || "none"} (${modelSelection.source})`,
+  },
+  summaryLength: {
+    ok: config.summaryMinChars >= 0 && config.summaryMaxChars >= config.summaryMinChars,
+    detail: `${config.summaryMinChars}-${config.summaryMaxChars} chars, default ${DEFAULT_SUMMARY_MIN_CHARS}-${DEFAULT_SUMMARY_MAX_CHARS}`,
   },
   despMaxChars: {
     ok: config.despMaxChars >= 0 && config.despMaxChars <= DEFAULT_DESP_MAX_CHARS,

@@ -81,6 +81,8 @@ if (args.show) {
     endpoint: config.endpoint || DEFAULT_ENDPOINT,
     hasPushkey: Boolean(config.pushkey),
     summaryModel: config.summaryModel,
+    summaryMinChars: config.summaryMinChars,
+    summaryMaxChars: config.summaryMaxChars,
     llmTimeoutMs: config.llmTimeoutMs,
     despMaxChars: config.despMaxChars,
     despSeparator: config.despSeparator,

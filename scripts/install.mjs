@@ -10,12 +10,15 @@ import {
   DEFAULT_DESP_MAX_CHARS,
   DEFAULT_DESP_SEPARATOR,
   DEFAULT_FINAL_WAIT_MS,
+  DEFAULT_SUMMARY_MAX_CHARS,
+  DEFAULT_SUMMARY_MIN_CHARS,
   configPath as pushdeerConfigPath,
   DEFAULT_LLM_TIMEOUT_MS,
   loadConfig as loadPushdeerConfig,
   normalizeDespMaxChars,
   normalizeDespSeparator,
   normalizeFinalWaitMs,
+  normalizeSummaryCharBounds,
   saveConfigPatch,
 } from "../plugins/codex-pushdeer-notifier/scripts/pushdeer-lib.mjs";
 import { chooseSummaryModel } from "./model-utils.mjs";
@@ -265,6 +268,41 @@ function configureSummaryModel() {
   }
 }
 
+function configureSummaryCharBounds() {
+  const hasExplicitValue =
+    args["summary-min-chars"] !== undefined ||
+    args["summary-max-chars"] !== undefined ||
+    args["summary-min"] !== undefined ||
+    args["summary-max"] !== undefined;
+
+  if (!hasExplicitValue) {
+    return;
+  }
+
+  const current = loadPushdeerConfig();
+  const { summaryMinChars, summaryMaxChars } = normalizeSummaryCharBounds(
+    args["summary-min-chars"] ??
+      args["summary-min"] ??
+      current.summaryMinChars ??
+      DEFAULT_SUMMARY_MIN_CHARS,
+    args["summary-max-chars"] ??
+      args["summary-max"] ??
+      current.summaryMaxChars ??
+      DEFAULT_SUMMARY_MAX_CHARS,
+  );
+
+  if (args["dry-run"]) {
+    console.log(`[dry-run] write summaryMinChars=${summaryMinChars}, summaryMaxChars=${summaryMaxChars} to ${pushdeerConfigPath()}`);
+    return;
+  }
+
+  saveConfigPatch({
+    summaryMinChars,
+    summaryMaxChars,
+  });
+  console.log(`Configured summary length ${summaryMinChars}-${summaryMaxChars} chars`);
+}
+
 function configureDespMaxChars() {
   const hasExplicitValue =
     args["desp-max-chars"] !== undefined ||
@@ -338,6 +376,7 @@ function configureFinalWaitMs() {
 installPlugin();
 await configureNotify();
 configureSummaryModel();
+configureSummaryCharBounds();
 configureDespMaxChars();
 configureDespSeparator();
 configureFinalWaitMs();

@@ -54,7 +54,8 @@ CODEX_PUSHDEER_DRY_RUN=1 node plugins/codex-pushdeer-notifier/scripts/pushdeer-n
 - Automatic completion notifications send the LLM summary in PushDeer `text`, and a separator plus the original assistant answer in `desp`.
 - Truncate automatic `desp` with `despMaxChars`; the default and hard cap are 300 characters including the separator. Set `despMaxChars` to `0` to omit `desp`.
 - Use `despSeparator` to distinguish the summary from original content when PushDeer clients display `text` and `desp` together. The default is `\n-----\n`.
-- Keep automatic summaries at or below 60 Chinese characters.
+- Prompt automatic summaries toward the configured `summaryMinChars` to `summaryMaxChars` range; defaults are 30 to 60 Chinese characters.
+- Do not hard-truncate LLM summaries. If a generated summary exceeds the configured range, send it as-is so it remains understandable.
 - Prefer `scripts/doctor.mjs` before editing source when a user's machine behaves differently.
 - Prefer `scripts/check-models.mjs --write-config` over hard-coding model names in source.
 - Do not include secrets, long logs, full stack traces, or complete command output in notifications.

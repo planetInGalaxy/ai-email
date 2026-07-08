@@ -1,6 +1,6 @@
 # Codex PushDeer Notifier
 
-Send a PushDeer notification after each Codex turn completes. The PushDeer `text` field is a short LLM-generated summary of the full assistant answer. The `desp` field contains a separator marker followed by the original assistant answer truncated to a configurable maximum length. If the summary model fails or times out, the notifier falls back to the first 50 characters of the final answer for `text`.
+Send a PushDeer notification after each Codex turn completes. The PushDeer `text` field is a short LLM-generated summary of the full assistant answer. The `desp` field contains a separator marker followed by the original assistant answer truncated to a configurable maximum length. If the summary model fails or times out, the notifier falls back to a complete short sentence or a generic completion notice for `text`.
 
 The notifier uses Codex `notify` with the `agent-turn-complete` event. It does not rely on Codex Stop hooks for normal operation.
 
@@ -11,7 +11,8 @@ The notifier uses Codex `notify` with the `agent-turn-complete` event. It does n
 - Summarizes the full user question and assistant answer with `codex exec`.
 - Sends the summary in PushDeer `text`.
 - Sends a separator plus the original assistant answer in PushDeer `desp`, truncated to `despMaxChars`.
-- Keeps the default summary at or below 60 characters.
+- Asks the summary model for 30 to 60 Chinese characters by default.
+- Does not hard-truncate LLM summaries; semantic completeness is preferred if the model slightly exceeds the configured range.
 - Keeps the default `desp` at or below 300 characters.
 - Stores each user's PushDeer key outside the repository.
 - Treats notification failures as non-blocking for the original Codex task.
@@ -69,6 +70,7 @@ Useful install flags:
 
 ```bash
 node scripts/install.mjs --summary-model gpt-5.5
+node scripts/install.mjs --summary-min-chars 30 --summary-max-chars 60
 node scripts/install.mjs --llm-timeout-ms 15000
 node scripts/install.mjs --desp-max-chars 300
 node scripts/install.mjs --desp-separator "\n-----\n"
@@ -131,6 +133,8 @@ The notifier config stores local runtime settings:
   "pushkey": "PDU...",
   "endpoint": "https://api2.pushdeer.com/message/push",
   "summaryModel": "gpt-5.4-mini",
+  "summaryMinChars": 30,
+  "summaryMaxChars": 60,
   "llmTimeoutMs": 12000,
   "despMaxChars": 300,
   "despSeparator": "\n-----\n",
@@ -144,6 +148,8 @@ Optional environment variables:
 
 ```bash
 export CODEX_PUSHDEER_SUMMARY_MODEL=gpt-5.4-mini
+export CODEX_PUSHDEER_SUMMARY_MIN_CHARS=30
+export CODEX_PUSHDEER_SUMMARY_MAX_CHARS=60
 export CODEX_PUSHDEER_LLM_TIMEOUT_MS=12000
 export CODEX_PUSHDEER_DESP_MAX_CHARS=300
 export CODEX_PUSHDEER_DESP_SEPARATOR='\n-----\n'
@@ -153,7 +159,8 @@ export CODEX_PUSHDEER_KEY='PDU...'
 ```
 
 `CODEX_PUSHDEER_KEY` and `PUSHDEER_KEY` override the stored config key.
-`CODEX_PUSHDEER_SUMMARY_MODEL` and `CODEX_PUSHDEER_LLM_TIMEOUT_MS` override the stored summary settings.
+`CODEX_PUSHDEER_SUMMARY_MODEL`, `CODEX_PUSHDEER_SUMMARY_MIN_CHARS`, `CODEX_PUSHDEER_SUMMARY_MAX_CHARS`, and `CODEX_PUSHDEER_LLM_TIMEOUT_MS` override the stored summary settings.
+Summary length is prompt-guided, not enforced by hard truncation. If the model returns a slightly longer complete sentence, the notifier sends it as-is.
 `CODEX_PUSHDEER_DESP_MAX_CHARS` overrides the stored `desp` truncation limit. Values above 300 are capped to 300. Set it to `0` to omit `desp`.
 `CODEX_PUSHDEER_DESP_SEPARATOR` overrides the marker placed before the original answer in `desp`; escaped `\n` sequences are converted to newlines. Set it to an empty string to omit the marker.
 `CODEX_PUSHDEER_FINAL_WAIT_MS` controls how long a notify event waits for the Codex session file to show `task_complete`. Intermediate events are skipped if no completed final answer appears within that window.
@@ -244,7 +251,7 @@ cd ai-email
 node scripts/install.mjs
 ```
 
-Pin releases with Git tags such as `v0.2.3`.
+Pin releases with Git tags such as `v0.2.4`.
 
 ## Troubleshooting
 
