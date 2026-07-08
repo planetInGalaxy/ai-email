@@ -7,9 +7,11 @@ import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { fileURLToPath } from "node:url";
 import {
+  DEFAULT_DESP_MAX_CHARS,
   configPath as pushdeerConfigPath,
   DEFAULT_LLM_TIMEOUT_MS,
   loadConfig as loadPushdeerConfig,
+  normalizeDespMaxChars,
   saveConfigPatch,
 } from "../plugins/codex-pushdeer-notifier/scripts/pushdeer-lib.mjs";
 import { chooseSummaryModel } from "./model-utils.mjs";
@@ -259,9 +261,35 @@ function configureSummaryModel() {
   }
 }
 
+function configureDespMaxChars() {
+  const hasExplicitValue =
+    args["desp-max-chars"] !== undefined ||
+    args["desp-max"] !== undefined ||
+    args["max-desp-chars"] !== undefined ||
+    args["no-desp"];
+
+  if (!hasExplicitValue) {
+    return;
+  }
+
+  const rawValue = args["no-desp"]
+    ? 0
+    : args["desp-max-chars"] ?? args["desp-max"] ?? args["max-desp-chars"] ?? DEFAULT_DESP_MAX_CHARS;
+  const despMaxChars = normalizeDespMaxChars(rawValue);
+
+  if (args["dry-run"]) {
+    console.log(`[dry-run] write despMaxChars=${despMaxChars} to ${pushdeerConfigPath()}`);
+    return;
+  }
+
+  saveConfigPatch({ despMaxChars });
+  console.log(`Configured PushDeer desp max length ${despMaxChars} chars`);
+}
+
 installPlugin();
 await configureNotify();
 configureSummaryModel();
+configureDespMaxChars();
 configurePushDeerKey();
 
 console.log("");

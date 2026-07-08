@@ -49,7 +49,8 @@ CODEX_PUSHDEER_DRY_RUN=1 node plugins/codex-pushdeer-notifier/scripts/pushdeer-n
 - For normal Codex answers, do not send a manual notification before the final response; rely on user-level Codex `notify` so completion notifications are sent on `agent-turn-complete`.
 - Do not enable the bundled Stop hook for normal use; it is kept only as an experimental fallback to avoid duplicate notifications.
 - Use manual notification commands only for setup, tests, troubleshooting, or explicit one-off user requests.
-- Automatic completion notifications send only PushDeer `text`; do not pass `desp` for normal completion notifications.
+- Automatic completion notifications send the LLM summary in PushDeer `text` and the original assistant answer in `desp`.
+- Truncate automatic `desp` with `despMaxChars`; the default and hard cap are 300 characters. Set `despMaxChars` to `0` to omit `desp`.
 - Keep automatic summaries at or below 60 Chinese characters.
 - Prefer `scripts/doctor.mjs` before editing source when a user's machine behaves differently.
 - Prefer `scripts/check-models.mjs --write-config` over hard-coding model names in source.

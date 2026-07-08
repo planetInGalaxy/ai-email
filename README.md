@@ -1,6 +1,6 @@
 # Codex PushDeer Notifier
 
-Send a PushDeer notification after each Codex turn completes. The notification text is a short LLM-generated summary of the full assistant answer. If the summary model fails or times out, the notifier falls back to the first 50 characters of the final answer.
+Send a PushDeer notification after each Codex turn completes. The PushDeer `text` field is a short LLM-generated summary of the full assistant answer. The `desp` field contains the original assistant answer truncated to a configurable maximum length. If the summary model fails or times out, the notifier falls back to the first 50 characters of the final answer for `text`.
 
 The notifier uses Codex `notify` with the `agent-turn-complete` event. It does not rely on Codex Stop hooks for normal operation.
 
@@ -8,8 +8,10 @@ The notifier uses Codex `notify` with the `agent-turn-complete` event. It does n
 
 - Runs after a Codex answer is complete.
 - Summarizes the full user question and assistant answer with `codex exec`.
-- Sends only the PushDeer `text` parameter. It does not send `desp` for automatic completion notifications.
+- Sends the summary in PushDeer `text`.
+- Sends the original assistant answer in PushDeer `desp`, truncated to `despMaxChars`.
 - Keeps the default summary at or below 60 characters.
+- Keeps the default `desp` at or below 300 characters.
 - Stores each user's PushDeer key outside the repository.
 - Treats notification failures as non-blocking for the original Codex task.
 
@@ -67,6 +69,8 @@ Useful install flags:
 ```bash
 node scripts/install.mjs --summary-model gpt-5.5
 node scripts/install.mjs --llm-timeout-ms 15000
+node scripts/install.mjs --desp-max-chars 300
+node scripts/install.mjs --no-desp
 node scripts/install.mjs --skip-model-check
 node scripts/install.mjs --force-notify
 ```
@@ -123,7 +127,8 @@ The notifier config stores local runtime settings:
   "pushkey": "PDU...",
   "endpoint": "https://api2.pushdeer.com/message/push",
   "summaryModel": "gpt-5.4-mini",
-  "llmTimeoutMs": 12000
+  "llmTimeoutMs": 12000,
+  "despMaxChars": 300
 }
 ```
 
@@ -134,12 +139,14 @@ Optional environment variables:
 ```bash
 export CODEX_PUSHDEER_SUMMARY_MODEL=gpt-5.4-mini
 export CODEX_PUSHDEER_LLM_TIMEOUT_MS=12000
+export CODEX_PUSHDEER_DESP_MAX_CHARS=300
 export CODEX_PUSHDEER_ENDPOINT=https://api2.pushdeer.com/message/push
 export CODEX_PUSHDEER_KEY='PDU...'
 ```
 
 `CODEX_PUSHDEER_KEY` and `PUSHDEER_KEY` override the stored config key.
 `CODEX_PUSHDEER_SUMMARY_MODEL` and `CODEX_PUSHDEER_LLM_TIMEOUT_MS` override the stored summary settings.
+`CODEX_PUSHDEER_DESP_MAX_CHARS` overrides the stored `desp` truncation limit. Values above 300 are capped to 300. Set it to `0` to omit `desp`.
 
 ## Manual Commands
 
@@ -227,7 +234,7 @@ cd ai-email
 node scripts/install.mjs
 ```
 
-Pin releases with Git tags such as `v0.2.0`.
+Pin releases with Git tags such as `v0.2.1`.
 
 ## Troubleshooting
 

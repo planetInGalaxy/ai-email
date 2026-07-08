@@ -18,6 +18,7 @@ import {
   sendPushDeer,
   summarizeFinalText,
   takeChars,
+  truncateDesp,
   wasAlreadySent,
 } from "./pushdeer-lib.mjs";
 
@@ -156,9 +157,11 @@ async function main() {
   const llmDescription = summarizeWithCodex({ finalText, notification });
   const pushText = llmDescription || fallbackSummary.desp;
   const config = loadConfig();
+  const pushDesp = truncateDesp(finalText, config.despMaxChars);
 
   await sendPushDeer({
     title: pushText,
+    desp: pushDesp,
     endpoint: config.endpoint,
     pushkey: config.pushkey,
     dryRun: Boolean(process.env.CODEX_PUSHDEER_DRY_RUN),
@@ -168,6 +171,8 @@ async function main() {
   logEvent("info", "PushDeer notify event sent", {
     sendId,
     text: pushText,
+    despChars: charLength(pushDesp),
+    despMaxChars: config.despMaxChars,
     summarySource: llmDescription ? "llm" : "fallback",
     summaryModel: config.summaryModel || DEFAULT_SUMMARY_MODEL,
   });

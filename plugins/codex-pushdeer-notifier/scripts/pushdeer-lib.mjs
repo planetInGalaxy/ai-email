@@ -7,6 +7,7 @@ export const DEFAULT_ENDPOINT = "https://api2.pushdeer.com/message/push";
 export const APP_NAME = "codex-pushdeer-notifier";
 export const DEFAULT_SUMMARY_MODEL = "gpt-5.4-mini";
 export const DEFAULT_LLM_TIMEOUT_MS = 12_000;
+export const DEFAULT_DESP_MAX_CHARS = 300;
 
 export function expandHome(value) {
   if (!value) return value;
@@ -141,6 +142,13 @@ export function loadConfig() {
       String(DEFAULT_LLM_TIMEOUT_MS),
     10,
   );
+  const despMaxChars = Number.parseInt(
+    process.env.CODEX_PUSHDEER_DESP_MAX_CHARS ??
+      config.despMaxChars ??
+      config.desp_max_chars ??
+      String(DEFAULT_DESP_MAX_CHARS),
+    10,
+  );
 
   return {
     ...config,
@@ -150,6 +158,7 @@ export function loadConfig() {
     llmTimeoutMs: Number.isFinite(llmTimeoutMs) && llmTimeoutMs > 0
       ? llmTimeoutMs
       : DEFAULT_LLM_TIMEOUT_MS,
+    despMaxChars: normalizeDespMaxChars(despMaxChars),
   };
 }
 
@@ -202,6 +211,19 @@ export function charLength(value) {
 
 export function takeChars(value, maxChars) {
   return Array.from(String(value || "")).slice(0, maxChars).join("");
+}
+
+export function normalizeDespMaxChars(value) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return DEFAULT_DESP_MAX_CHARS;
+  if (parsed < 0) return 0;
+  return Math.min(parsed, DEFAULT_DESP_MAX_CHARS);
+}
+
+export function truncateDesp(finalText, maxChars = DEFAULT_DESP_MAX_CHARS) {
+  const normalizedMax = normalizeDespMaxChars(maxChars);
+  if (normalizedMax <= 0) return "";
+  return takeChars(String(finalText || ""), normalizedMax);
 }
 
 export function fallbackDescription(finalText) {

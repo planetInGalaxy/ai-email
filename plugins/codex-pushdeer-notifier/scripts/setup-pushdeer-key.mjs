@@ -82,6 +82,7 @@ if (args.show) {
     hasPushkey: Boolean(config.pushkey),
     summaryModel: config.summaryModel,
     llmTimeoutMs: config.llmTimeoutMs,
+    despMaxChars: config.despMaxChars,
   }, null, 2));
   process.exit(0);
 }

@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  DEFAULT_DESP_MAX_CHARS,
   configPath as pushdeerConfigPath,
   loadConfig,
   redactText,
@@ -118,6 +119,10 @@ const checks = {
   summaryModel: {
     ok: Boolean(modelSelection.model),
     detail: `${modelSelection.model || "none"} (${modelSelection.source})`,
+  },
+  despMaxChars: {
+    ok: config.despMaxChars >= 0 && config.despMaxChars <= DEFAULT_DESP_MAX_CHARS,
+    detail: `${config.despMaxChars} chars`,
   },
   notifierLog: logStatus(),
 };
