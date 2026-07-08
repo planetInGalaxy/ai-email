@@ -4,7 +4,8 @@ import os from "node:os";
 import path from "node:path";
 
 export const DEFAULT_ENDPOINT = "https://api2.pushdeer.com/message/push";
-export const APP_NAME = "codex-pushdeer-notifier";
+export const APP_NAME = "agentping";
+export const LEGACY_APP_NAME = "codex-pushdeer-notifier";
 export const DEFAULT_SUMMARY_MODEL = "gpt-5.4-mini";
 export const DEFAULT_SUMMARY_MIN_CHARS = 30;
 export const DEFAULT_SUMMARY_MAX_CHARS = 60;
@@ -25,16 +26,39 @@ export function expandHome(value) {
   return value;
 }
 
+export function envValue(...names) {
+  for (const name of names) {
+    const value = process.env[name];
+    if (value !== undefined && value !== "") return value;
+  }
+  return undefined;
+}
+
+function defaultConfigPath(appName) {
+  return path.join(os.homedir(), ".config", appName, "config.json");
+}
+
 export function configPath() {
   return expandHome(
-    process.env.CODEX_PUSHDEER_CONFIG ||
-      path.join(os.homedir(), ".config", APP_NAME, "config.json"),
+    envValue("AGENTPING_CONFIG", "CODEX_PUSHDEER_CONFIG") ||
+      defaultConfigPath(APP_NAME),
   );
+}
+
+export function legacyConfigPath() {
+  return expandHome(defaultConfigPath(LEGACY_APP_NAME));
+}
+
+export function configSourcePath() {
+  if (envValue("AGENTPING_CONFIG", "CODEX_PUSHDEER_CONFIG")) return configPath();
+  if (fs.existsSync(configPath())) return configPath();
+  if (fs.existsSync(legacyConfigPath())) return legacyConfigPath();
+  return configPath();
 }
 
 export function stateDir() {
   return expandHome(
-    process.env.CODEX_PUSHDEER_STATE_DIR ||
+    envValue("AGENTPING_STATE_DIR", "CODEX_PUSHDEER_STATE_DIR") ||
       path.join(os.homedir(), ".local", "state", APP_NAME),
   );
 }
@@ -127,85 +151,83 @@ export function safeJsonParse(raw) {
 }
 
 export function loadConfig() {
-  const config = readJsonIfExists(configPath(), {});
+  const config = readJsonIfExists(configSourcePath(), {});
   const endpoint =
-    process.env.PUSHDEER_ENDPOINT ||
-    process.env.CODEX_PUSHDEER_ENDPOINT ||
+    envValue("AGENTPING_PUSHDEER_ENDPOINT", "AGENTPING_ENDPOINT", "PUSHDEER_ENDPOINT", "CODEX_PUSHDEER_ENDPOINT") ||
     config.pushdeerEndpoint ||
     config.endpoint ||
     DEFAULT_ENDPOINT;
   const pushkey =
-    process.env.PUSHDEER_KEY ||
-    process.env.CODEX_PUSHDEER_KEY ||
+    envValue("AGENTPING_PUSHDEER_KEY", "AGENTPING_KEY", "PUSHDEER_KEY", "CODEX_PUSHDEER_KEY") ||
     config.pushkey ||
     config.pushKey ||
     "";
   const summaryModel =
-    process.env.CODEX_PUSHDEER_SUMMARY_MODEL ||
+    envValue("AGENTPING_SUMMARY_MODEL", "CODEX_PUSHDEER_SUMMARY_MODEL") ||
     config.summaryModel ||
     config.summary_model ||
     DEFAULT_SUMMARY_MODEL;
   const summaryMinChars = Number.parseInt(
-    process.env.CODEX_PUSHDEER_SUMMARY_MIN_CHARS ??
+    envValue("AGENTPING_SUMMARY_MIN_CHARS", "CODEX_PUSHDEER_SUMMARY_MIN_CHARS") ??
       config.summaryMinChars ??
       config.summary_min_chars ??
       String(DEFAULT_SUMMARY_MIN_CHARS),
     10,
   );
   const summaryMaxChars = Number.parseInt(
-    process.env.CODEX_PUSHDEER_SUMMARY_MAX_CHARS ??
+    envValue("AGENTPING_SUMMARY_MAX_CHARS", "CODEX_PUSHDEER_SUMMARY_MAX_CHARS") ??
       config.summaryMaxChars ??
       config.summary_max_chars ??
       String(DEFAULT_SUMMARY_MAX_CHARS),
     10,
   );
   const llmTimeoutMs = Number.parseInt(
-    process.env.CODEX_PUSHDEER_LLM_TIMEOUT_MS ||
+    envValue("AGENTPING_LLM_TIMEOUT_MS", "CODEX_PUSHDEER_LLM_TIMEOUT_MS") ||
       config.llmTimeoutMs ||
       config.llm_timeout_ms ||
       String(DEFAULT_LLM_TIMEOUT_MS),
     10,
   );
   const despMaxChars = Number.parseInt(
-    process.env.CODEX_PUSHDEER_DESP_MAX_CHARS ??
+    envValue("AGENTPING_DESP_MAX_CHARS", "CODEX_PUSHDEER_DESP_MAX_CHARS") ??
       config.despMaxChars ??
       config.desp_max_chars ??
       String(DEFAULT_DESP_MAX_CHARS),
     10,
   );
   const despSeparator =
-    process.env.CODEX_PUSHDEER_DESP_SEPARATOR ??
+    envValue("AGENTPING_DESP_SEPARATOR", "CODEX_PUSHDEER_DESP_SEPARATOR") ??
     config.despSeparator ??
     config.desp_separator ??
     DEFAULT_DESP_SEPARATOR;
   const finalWaitMs = Number.parseInt(
-    process.env.CODEX_PUSHDEER_FINAL_WAIT_MS ??
+    envValue("AGENTPING_FINAL_WAIT_MS", "CODEX_PUSHDEER_FINAL_WAIT_MS") ??
       config.finalWaitMs ??
       config.final_wait_ms ??
       String(DEFAULT_FINAL_WAIT_MS),
     10,
   );
   const notifyMode =
-    process.env.CODEX_PUSHDEER_NOTIFY_MODE ??
+    envValue("AGENTPING_NOTIFY_MODE", "CODEX_PUSHDEER_NOTIFY_MODE") ??
     config.notifyMode ??
     config.notify_mode ??
     DEFAULT_NOTIFY_MODE;
   const minDurationMs = Number.parseInt(
-    process.env.CODEX_PUSHDEER_MIN_DURATION_MS ??
+    envValue("AGENTPING_MIN_DURATION_MS", "CODEX_PUSHDEER_MIN_DURATION_MS") ??
       config.minDurationMs ??
       config.min_duration_ms ??
       String(DEFAULT_MIN_DURATION_MS),
     10,
   );
   const logMaxBytes = Number.parseInt(
-    process.env.CODEX_PUSHDEER_LOG_MAX_BYTES ??
+    envValue("AGENTPING_LOG_MAX_BYTES", "CODEX_PUSHDEER_LOG_MAX_BYTES") ??
       config.logMaxBytes ??
       config.log_max_bytes ??
       String(DEFAULT_LOG_MAX_BYTES),
     10,
   );
   const logKeepFiles = Number.parseInt(
-    process.env.CODEX_PUSHDEER_LOG_KEEP_FILES ??
+    envValue("AGENTPING_LOG_KEEP_FILES", "CODEX_PUSHDEER_LOG_KEEP_FILES") ??
       config.logKeepFiles ??
       config.log_keep_files ??
       String(DEFAULT_LOG_KEEP_FILES),
@@ -233,7 +255,7 @@ export function loadConfig() {
 }
 
 export function saveConfigPatch(patch) {
-  const current = readJsonIfExists(configPath(), {});
+  const current = readJsonIfExists(configPath(), null) ?? readJsonIfExists(configSourcePath(), {});
   writeJson0600(configPath(), {
     ...current,
     ...patch,
@@ -346,16 +368,16 @@ export function normalizeLogKeepFiles(value) {
 }
 
 function logSettings() {
-  const config = readJsonIfExists(configPath(), {});
+  const config = readJsonIfExists(configSourcePath(), {});
   return {
     logMaxBytes: normalizeLogMaxBytes(
-      process.env.CODEX_PUSHDEER_LOG_MAX_BYTES ??
+      envValue("AGENTPING_LOG_MAX_BYTES", "CODEX_PUSHDEER_LOG_MAX_BYTES") ??
         config.logMaxBytes ??
         config.log_max_bytes ??
         DEFAULT_LOG_MAX_BYTES,
     ),
     logKeepFiles: normalizeLogKeepFiles(
-      process.env.CODEX_PUSHDEER_LOG_KEEP_FILES ??
+      envValue("AGENTPING_LOG_KEEP_FILES", "CODEX_PUSHDEER_LOG_KEEP_FILES") ??
         config.logKeepFiles ??
         config.log_keep_files ??
         DEFAULT_LOG_KEEP_FILES,
@@ -775,12 +797,12 @@ export async function sendPushDeer({ title, desp, endpoint, pushkey, dryRun = fa
       title,
       desp,
       endpoint,
-      params: Object.fromEntries(params.entries()),
+      params: redactObject(Object.fromEntries(params.entries())),
     };
   }
 
   if (!pushkey) {
-    throw new Error("Missing PushDeer key. Run setup or set PUSHDEER_KEY.");
+    throw new Error("Missing PushDeer key. Run setup or set AGENTPING_PUSHDEER_KEY.");
   }
 
   let lastError = null;

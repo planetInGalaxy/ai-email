@@ -1,8 +1,10 @@
-# Codex PushDeer Notifier
+# AgentPing
 
-Send a PushDeer notification after each Codex turn completes. The PushDeer `text` field is a short LLM-generated summary of the full assistant answer. The `desp` field contains a separator marker followed by the original assistant answer truncated to a configurable maximum length. If the summary model fails or times out, the notifier falls back to a complete short sentence or a generic completion notice for `text`.
+AgentPing sends concise completion summaries when your AI agents finish.
 
-The notifier uses Codex `notify` with the `agent-turn-complete` event. It does not rely on Codex Stop hooks for normal operation.
+It currently supports Codex completion events and PushDeer delivery. The PushDeer `text` field is a short LLM-generated summary of the full assistant answer. The `desp` field contains a separator marker followed by the original assistant answer truncated to a configurable maximum length. If the summary model fails or times out, AgentPing falls back to a complete short sentence or a generic completion notice for `text`.
+
+AgentPing uses Codex `notify` with the `agent-turn-complete` event. It does not rely on Codex Stop hooks for normal operation.
 
 ## What It Does
 
@@ -18,6 +20,7 @@ The notifier uses Codex `notify` with the `agent-turn-complete` event. It does n
 - Rotates local notifier logs so troubleshooting data does not grow without bound.
 - Includes local self-test commands that use temporary files and dry-run PushDeer sends.
 - Stores each user's PushDeer key outside the repository.
+- Keeps compatibility with the old `codex-pushdeer` CLI and `CODEX_PUSHDEER_*` environment variables during migration.
 - Treats notification failures as non-blocking for the original Codex task.
 
 ## Requirements
@@ -35,7 +38,7 @@ node scripts/install.mjs --summary-model gpt-5.5
 
 ## Install
 
-Clone this repository, then run the installer:
+Clone this repository, then run the installer. The GitHub repository is still `ai-email` until the repository itself is renamed:
 
 ```bash
 git clone https://github.com/planetInGalaxy/ai-email.git
@@ -45,8 +48,8 @@ node scripts/install.mjs
 
 The installer will:
 
-- Add this repository as a local Codex plugin marketplace named `codex-pushdeer`.
-- Install `codex-pushdeer-notifier@codex-pushdeer`.
+- Add this repository as a local Codex plugin marketplace named `agentping`.
+- Install `agentping@agentping`.
 - Configure the top-level Codex `notify` entry in `~/.codex/config.toml`.
 - Detect and store an available Codex summary model.
 - Prompt for a PushDeer key if one is not already configured.
@@ -54,13 +57,13 @@ The installer will:
 To pass the key non-interactively:
 
 ```bash
-PUSHDEER_KEY='PDU...' node scripts/install.mjs
+AGENTPING_PUSHDEER_KEY='PDU...' node scripts/install.mjs
 ```
 
 To send a real PushDeer test notification during setup:
 
 ```bash
-PUSHDEER_KEY='PDU...' node scripts/install.mjs --test
+AGENTPING_PUSHDEER_KEY='PDU...' node scripts/install.mjs --test
 ```
 
 To preview what the installer would do without changing local files:
@@ -91,14 +94,16 @@ After installation, start a new Codex thread or restart Codex.
 
 ## Package-Style Usage
 
-This repository is npm-package ready and exposes a `codex-pushdeer` command. After publishing to npm, users should install it globally so Codex `notify` points at a stable script path:
+This repository is npm-package ready and exposes an `agentping` command. After publishing to npm, users should install it globally so Codex `notify` points at a stable script path:
 
 ```bash
-npm install -g codex-pushdeer-notifier
-codex-pushdeer install
+npm install -g agentping
+agentping install
 ```
 
 Until it is published to npm, use the clone-based install above.
+
+The old `codex-pushdeer` command remains as a compatibility alias, but new docs and installs should use `agentping`.
 
 ## Existing Notify Config
 
@@ -117,7 +122,7 @@ If you already use another notifier, do not force overwrite unless replacing it 
 The PushDeer key is saved here:
 
 ```text
-~/.config/codex-pushdeer-notifier/config.json
+~/.config/agentping/config.json
 ```
 
 The Codex notify command is written here:
@@ -129,7 +134,7 @@ The Codex notify command is written here:
 The installer writes a line like this:
 
 ```toml
-notify = ["node", "/absolute/path/to/codex-pushdeer-notifier/plugins/codex-pushdeer-notifier/scripts/pushdeer-notify-event.mjs"]
+notify = ["node", "/absolute/path/to/repo/plugins/agentping/scripts/pushdeer-notify-event.mjs"]
 ```
 
 The notifier config stores local runtime settings:
@@ -157,30 +162,32 @@ The notifier config stores local runtime settings:
 Optional environment variables:
 
 ```bash
-export CODEX_PUSHDEER_SUMMARY_MODEL=gpt-5.4-mini
-export CODEX_PUSHDEER_SUMMARY_MIN_CHARS=30
-export CODEX_PUSHDEER_SUMMARY_MAX_CHARS=60
-export CODEX_PUSHDEER_LLM_TIMEOUT_MS=12000
-export CODEX_PUSHDEER_DESP_MAX_CHARS=300
-export CODEX_PUSHDEER_DESP_SEPARATOR='\n-----\n'
-export CODEX_PUSHDEER_FINAL_WAIT_MS=8000
-export CODEX_PUSHDEER_NOTIFY_MODE=always
-export CODEX_PUSHDEER_MIN_DURATION_MS=30000
-export CODEX_PUSHDEER_LOG_MAX_BYTES=2097152
-export CODEX_PUSHDEER_LOG_KEEP_FILES=3
-export CODEX_PUSHDEER_ENDPOINT=https://api2.pushdeer.com/message/push
-export CODEX_PUSHDEER_KEY='PDU...'
+export AGENTPING_SUMMARY_MODEL=gpt-5.4-mini
+export AGENTPING_SUMMARY_MIN_CHARS=30
+export AGENTPING_SUMMARY_MAX_CHARS=60
+export AGENTPING_LLM_TIMEOUT_MS=12000
+export AGENTPING_DESP_MAX_CHARS=300
+export AGENTPING_DESP_SEPARATOR='\n-----\n'
+export AGENTPING_FINAL_WAIT_MS=8000
+export AGENTPING_NOTIFY_MODE=always
+export AGENTPING_MIN_DURATION_MS=30000
+export AGENTPING_LOG_MAX_BYTES=2097152
+export AGENTPING_LOG_KEEP_FILES=3
+export AGENTPING_PUSHDEER_ENDPOINT=https://api2.pushdeer.com/message/push
+export AGENTPING_PUSHDEER_KEY='PDU...'
 ```
 
-`CODEX_PUSHDEER_KEY` and `PUSHDEER_KEY` override the stored config key.
-`CODEX_PUSHDEER_SUMMARY_MODEL`, `CODEX_PUSHDEER_SUMMARY_MIN_CHARS`, `CODEX_PUSHDEER_SUMMARY_MAX_CHARS`, and `CODEX_PUSHDEER_LLM_TIMEOUT_MS` override the stored summary settings.
+`AGENTPING_PUSHDEER_KEY`, `AGENTPING_KEY`, and `PUSHDEER_KEY` override the stored config key.
+`AGENTPING_SUMMARY_MODEL`, `AGENTPING_SUMMARY_MIN_CHARS`, `AGENTPING_SUMMARY_MAX_CHARS`, and `AGENTPING_LLM_TIMEOUT_MS` override the stored summary settings.
 Summary length is prompt-guided, not enforced by hard truncation. If the model returns a slightly longer complete sentence, the notifier sends it as-is.
-`CODEX_PUSHDEER_DESP_MAX_CHARS` overrides the stored `desp` truncation limit. Values above 300 are capped to 300. Set it to `0` to omit `desp`.
-`CODEX_PUSHDEER_DESP_SEPARATOR` overrides the marker placed before the original answer in `desp`; escaped `\n` sequences are converted to newlines. Set it to an empty string to omit the marker.
-`CODEX_PUSHDEER_FINAL_WAIT_MS` controls how long a notify event waits for the Codex session file to show `task_complete`. Intermediate events are skipped if no completed final answer appears within that window.
-`CODEX_PUSHDEER_NOTIFY_MODE` controls whether automatic notifications send. Valid values are `always`, `long_only`, `errors_only`, and `off`. The default is `always`.
-`CODEX_PUSHDEER_MIN_DURATION_MS` is used by `long_only`; turns shorter than this threshold are skipped.
-`CODEX_PUSHDEER_LOG_MAX_BYTES` and `CODEX_PUSHDEER_LOG_KEEP_FILES` control local log rotation. Set `CODEX_PUSHDEER_LOG_MAX_BYTES=0` to disable rotation.
+`AGENTPING_DESP_MAX_CHARS` overrides the stored `desp` truncation limit. Values above 300 are capped to 300. Set it to `0` to omit `desp`.
+`AGENTPING_DESP_SEPARATOR` overrides the marker placed before the original answer in `desp`; escaped `\n` sequences are converted to newlines. Set it to an empty string to omit the marker.
+`AGENTPING_FINAL_WAIT_MS` controls how long a notify event waits for the Codex session file to show `task_complete`. Intermediate events are skipped if no completed final answer appears within that window.
+`AGENTPING_NOTIFY_MODE` controls whether automatic notifications send. Valid values are `always`, `long_only`, `errors_only`, and `off`. The default is `always`.
+`AGENTPING_MIN_DURATION_MS` is used by `long_only`; turns shorter than this threshold are skipped.
+`AGENTPING_LOG_MAX_BYTES` and `AGENTPING_LOG_KEEP_FILES` control local log rotation. Set `AGENTPING_LOG_MAX_BYTES=0` to disable rotation.
+
+Legacy `CODEX_PUSHDEER_*` variables and the old `~/.config/codex-pushdeer-notifier/config.json` config file are still read during migration. New writes go to `~/.config/agentping/config.json`.
 
 ## Manual Commands
 
@@ -188,14 +195,14 @@ Show PushDeer config status:
 
 ```bash
 npm run config:show
-codex-pushdeer config show
-codex-pushdeer config set-summary-range 30 60
-codex-pushdeer config set-timeout 15000
-codex-pushdeer config set-desp-max 300
-codex-pushdeer config set-separator "\n-----\n"
-codex-pushdeer config set-mode always
-codex-pushdeer config set-mode long_only --min-duration-ms 30000
-codex-pushdeer config set-mode off
+agentping config show
+agentping config set-summary-range 30 60
+agentping config set-timeout 15000
+agentping config set-desp-max 300
+agentping config set-separator "\n-----\n"
+agentping config set-mode always
+agentping config set-mode long_only --min-duration-ms 30000
+agentping config set-mode off
 ```
 
 Diagnose the whole local setup:
@@ -220,17 +227,17 @@ npm run notify:dry-run
 Inspect and manage local notifier logs:
 
 ```bash
-codex-pushdeer logs status
-codex-pushdeer logs tail 20
-codex-pushdeer logs rotate
-codex-pushdeer logs clear
+agentping logs status
+agentping logs tail 20
+agentping logs rotate
+agentping logs clear
 ```
 
 Run local self-tests:
 
 ```bash
-codex-pushdeer test all
-codex-pushdeer test push --real
+agentping test all
+agentping test push --real
 ```
 
 Validate the plugin structure:
@@ -281,7 +288,7 @@ This repository includes a Codex marketplace at:
 The marketplace exposes:
 
 ```text
-codex-pushdeer-notifier@codex-pushdeer
+agentping@agentping
 ```
 
 For team distribution, ask users to clone this repository and run:
@@ -292,7 +299,7 @@ cd ai-email
 node scripts/install.mjs
 ```
 
-Pin releases with Git tags such as `v0.3.0`.
+Pin releases with Git tags such as `v0.4.0`.
 
 ## Troubleshooting
 
@@ -306,8 +313,8 @@ Common failures:
 
 - `codex` command missing: install or log into Codex CLI first.
 - `notify` mismatch: another notifier is configured in `~/.codex/config.toml`; rerun install with `--force-notify` only if replacement is intended.
-- PushDeer key missing: run `PUSHDEER_KEY='PDU...' node scripts/install.mjs`.
+- PushDeer key missing: run `AGENTPING_PUSHDEER_KEY='PDU...' node scripts/install.mjs`.
 - Summary model unavailable: run `npm run check-models -- --write-config` or reinstall with `--summary-model <model>`.
 - No notification after install: restart Codex or start a new Codex thread.
-- Notification arrives for tasks you do not care about: use `codex-pushdeer config set-mode long_only --min-duration-ms 30000` or `codex-pushdeer config set-mode off`.
-- Log file is too large: run `codex-pushdeer logs rotate`, `codex-pushdeer logs clear`, or reduce `logMaxBytes`.
+- Notification arrives for tasks you do not care about: use `agentping config set-mode long_only --min-duration-ms 30000` or `agentping config set-mode off`.
+- Log file is too large: run `agentping logs rotate`, `agentping logs clear`, or reduce `logMaxBytes`.

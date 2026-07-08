@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import {
   DEFAULT_ENDPOINT,
+  envValue,
   loadConfig,
   logEvent,
   parseArgs,
@@ -12,7 +13,7 @@ const args = parseArgs();
 const title = args.title || args.text || args._[0] || "";
 const desp = args.desp || args.description || args._[1] || "";
 const quiet = Boolean(args.quiet);
-const dryRun = Boolean(args["dry-run"] || process.env.CODEX_PUSHDEER_DRY_RUN);
+const dryRun = Boolean(args["dry-run"] || envValue("AGENTPING_DRY_RUN", "CODEX_PUSHDEER_DRY_RUN"));
 const config = loadConfig();
 
 const endpoint = args.endpoint || config.endpoint || DEFAULT_ENDPOINT;

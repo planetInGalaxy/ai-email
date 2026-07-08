@@ -16,9 +16,10 @@ import {
   DEFAULT_NOTIFY_MODE,
   DEFAULT_SUMMARY_MAX_CHARS,
   DEFAULT_SUMMARY_MIN_CHARS,
-  configPath as pushdeerConfigPath,
+  configPath as agentpingConfigPath,
+  configSourcePath,
   DEFAULT_LLM_TIMEOUT_MS,
-  loadConfig as loadPushdeerConfig,
+  loadConfig as loadAgentPingConfig,
   normalizeDespMaxChars,
   normalizeDespSeparator,
   normalizeFinalWaitMs,
@@ -28,16 +29,25 @@ import {
   normalizeNotifyMode,
   normalizeSummaryCharBounds,
   saveConfigPatch,
-} from "../plugins/codex-pushdeer-notifier/scripts/pushdeer-lib.mjs";
+} from "../plugins/agentping/scripts/pushdeer-lib.mjs";
 import { chooseSummaryModel } from "./model-utils.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const projectRoot = path.resolve(path.dirname(__filename), "..");
-const pluginRoot = path.join(projectRoot, "plugins", "codex-pushdeer-notifier");
+const pluginRoot = path.join(projectRoot, "plugins", "agentping");
 const notifyScript = path.join(pluginRoot, "scripts", "pushdeer-notify-event.mjs");
+const legacyNotifyScript = path.join(
+  projectRoot,
+  "plugins",
+  "codex-pushdeer-notifier",
+  "scripts",
+  "pushdeer-notify-event.mjs",
+);
 const setupScript = path.join(pluginRoot, "scripts", "setup-pushdeer-key.mjs");
-const marketplaceName = "codex-pushdeer";
-const pluginName = "codex-pushdeer-notifier";
+const marketplaceName = "agentping";
+const pluginName = "agentping";
+const legacyMarketplaceName = "codex-pushdeer";
+const legacyPluginName = "codex-pushdeer-notifier";
 
 function parseArgs(argv = process.argv.slice(2)) {
   const args = { _: [] };
@@ -122,6 +132,10 @@ function desiredNotifyLine() {
   return `notify = ${JSON.stringify(["node", notifyScript])}`;
 }
 
+function legacyNotifyLine() {
+  return `notify = ${JSON.stringify(["node", legacyNotifyScript])}`;
+}
+
 function replaceTopLevelNotify(contents, replacementLine, force) {
   const lines = contents.split(/\r?\n/);
   let firstTableIndex = lines.findIndex((line) => /^\s*\[/.test(line));
@@ -132,6 +146,14 @@ function replaceTopLevelNotify(contents, replacementLine, force) {
     if (!/^\s*notify\s*=/.test(line)) continue;
     if (line.trim() === replacementLine) {
       return { contents, changed: false, reason: "notify already configured" };
+    }
+    if (line.trim() === legacyNotifyLine()) {
+      lines[i] = replacementLine;
+      return {
+        contents: lines.join("\n").replace(/\n*$/u, "\n"),
+        changed: true,
+        reason: "legacy notify replaced",
+      };
     }
     if (!force) {
       return {
@@ -169,7 +191,7 @@ async function configureNotify() {
 
   if (result.conflict) {
     console.log(`Existing top-level notify found: ${result.conflict}`);
-    const ok = await confirm("Replace it with the PushDeer notifier?");
+    const ok = await confirm("Replace it with the AgentPing notifier?");
     if (!ok) {
       console.error("Refusing to overwrite existing notify. Re-run with --force-notify to replace it.");
       process.exit(2);
@@ -213,6 +235,7 @@ function installPlugin() {
 
   run("codex", ["plugin", "add", `${pluginName}@${marketplaceName}`]);
   console.log(`Installed ${pluginName}@${marketplaceName}`);
+  run("codex", ["plugin", "remove", `${legacyPluginName}@${legacyMarketplaceName}`], { allowFailure: true });
 }
 
 function configurePushDeerKey() {
@@ -221,10 +244,15 @@ function configurePushDeerKey() {
     return;
   }
 
-  const current = loadPushdeerConfig();
-  const hasExplicitKey = args.key || args.stdin || process.env.PUSHDEER_KEY || process.env.CODEX_PUSHDEER_KEY;
+  const current = loadAgentPingConfig();
+  const hasExplicitKey = args.key ||
+    args.stdin ||
+    process.env.AGENTPING_PUSHDEER_KEY ||
+    process.env.AGENTPING_KEY ||
+    process.env.PUSHDEER_KEY ||
+    process.env.CODEX_PUSHDEER_KEY;
   if (current.pushkey && !args["force-key"] && !hasExplicitKey) {
-    console.log(`PushDeer key already configured in ${pushdeerConfigPath()}`);
+    console.log(`PushDeer key already configured in ${agentpingConfigPath()}`);
     return;
   }
 
@@ -237,13 +265,28 @@ function configurePushDeerKey() {
   run(process.execPath, setupArgs);
 }
 
+function migrateLegacyConfig() {
+  const target = agentpingConfigPath();
+  const source = configSourcePath();
+  if (path.resolve(source) === path.resolve(target)) return;
+  if (fs.existsSync(target)) return;
+
+  if (args["dry-run"]) {
+    console.log(`[dry-run] migrate config from ${source} to ${target}`);
+    return;
+  }
+
+  saveConfigPatch({});
+  console.log(`Migrated AgentPing config from ${source} to ${target}`);
+}
+
 function configureSummaryModel() {
   if (args["skip-model-check"]) {
     console.log("Skipped summary model detection.");
     return;
   }
 
-  const current = loadPushdeerConfig();
+  const current = loadAgentPingConfig();
   const timeoutMs = Number.parseInt(
     args["llm-timeout-ms"] || args.timeout || current.llmTimeoutMs || DEFAULT_LLM_TIMEOUT_MS,
     10,
@@ -262,7 +305,7 @@ function configureSummaryModel() {
   }
 
   if (args["dry-run"]) {
-    console.log(`[dry-run] write summaryModel=${summaryModel}, llmTimeoutMs=${llmTimeoutMs} to ${pushdeerConfigPath()}`);
+    console.log(`[dry-run] write summaryModel=${summaryModel}, llmTimeoutMs=${llmTimeoutMs} to ${agentpingConfigPath()}`);
     return;
   }
 
@@ -287,7 +330,7 @@ function configureSummaryCharBounds() {
     return;
   }
 
-  const current = loadPushdeerConfig();
+  const current = loadAgentPingConfig();
   const { summaryMinChars, summaryMaxChars } = normalizeSummaryCharBounds(
     args["summary-min-chars"] ??
       args["summary-min"] ??
@@ -300,7 +343,7 @@ function configureSummaryCharBounds() {
   );
 
   if (args["dry-run"]) {
-    console.log(`[dry-run] write summaryMinChars=${summaryMinChars}, summaryMaxChars=${summaryMaxChars} to ${pushdeerConfigPath()}`);
+    console.log(`[dry-run] write summaryMinChars=${summaryMinChars}, summaryMaxChars=${summaryMaxChars} to ${agentpingConfigPath()}`);
     return;
   }
 
@@ -328,7 +371,7 @@ function configureDespMaxChars() {
   const despMaxChars = normalizeDespMaxChars(rawValue);
 
   if (args["dry-run"]) {
-    console.log(`[dry-run] write despMaxChars=${despMaxChars} to ${pushdeerConfigPath()}`);
+    console.log(`[dry-run] write despMaxChars=${despMaxChars} to ${agentpingConfigPath()}`);
     return;
   }
 
@@ -352,7 +395,7 @@ function configureDespSeparator() {
   const despSeparator = normalizeDespSeparator(rawValue);
 
   if (args["dry-run"]) {
-    console.log(`[dry-run] write despSeparator=${JSON.stringify(despSeparator)} to ${pushdeerConfigPath()}`);
+    console.log(`[dry-run] write despSeparator=${JSON.stringify(despSeparator)} to ${agentpingConfigPath()}`);
     return;
   }
 
@@ -373,7 +416,7 @@ function configureFinalWaitMs() {
   const finalWaitMs = normalizeFinalWaitMs(rawValue);
 
   if (args["dry-run"]) {
-    console.log(`[dry-run] write finalWaitMs=${finalWaitMs} to ${pushdeerConfigPath()}`);
+    console.log(`[dry-run] write finalWaitMs=${finalWaitMs} to ${agentpingConfigPath()}`);
     return;
   }
 
@@ -391,7 +434,7 @@ function configureNotificationMode() {
     return;
   }
 
-  const current = loadPushdeerConfig();
+  const current = loadAgentPingConfig();
   const rawMode = args["notify-mode"] ?? current.notifyMode ?? DEFAULT_NOTIFY_MODE;
   const notifyMode = normalizeNotifyMode(rawMode);
   const minDurationMs = normalizeMinDurationMs(
@@ -402,7 +445,7 @@ function configureNotificationMode() {
   );
 
   if (args["dry-run"]) {
-    console.log(`[dry-run] write notifyMode=${notifyMode}, minDurationMs=${minDurationMs} to ${pushdeerConfigPath()}`);
+    console.log(`[dry-run] write notifyMode=${notifyMode}, minDurationMs=${minDurationMs} to ${agentpingConfigPath()}`);
     return;
   }
 
@@ -422,7 +465,7 @@ function configureLogSettings() {
     return;
   }
 
-  const current = loadPushdeerConfig();
+  const current = loadAgentPingConfig();
   const logMaxBytes = normalizeLogMaxBytes(
     args["log-max-bytes"] ??
       current.logMaxBytes ??
@@ -435,7 +478,7 @@ function configureLogSettings() {
   );
 
   if (args["dry-run"]) {
-    console.log(`[dry-run] write logMaxBytes=${logMaxBytes}, logKeepFiles=${logKeepFiles} to ${pushdeerConfigPath()}`);
+    console.log(`[dry-run] write logMaxBytes=${logMaxBytes}, logKeepFiles=${logKeepFiles} to ${agentpingConfigPath()}`);
     return;
   }
 
@@ -448,6 +491,7 @@ function configureLogSettings() {
 
 installPlugin();
 await configureNotify();
+migrateLegacyConfig();
 configureSummaryModel();
 configureSummaryCharBounds();
 configureDespMaxChars();

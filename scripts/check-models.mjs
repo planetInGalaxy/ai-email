@@ -5,7 +5,7 @@ import {
   configPath,
   loadConfig,
   saveConfigPatch,
-} from "../plugins/codex-pushdeer-notifier/scripts/pushdeer-lib.mjs";
+} from "../plugins/agentping/scripts/pushdeer-lib.mjs";
 import { chooseSummaryModel, listCodexModels } from "./model-utils.mjs";
 
 function parseArgs(argv = process.argv.slice(2)) {
@@ -35,7 +35,11 @@ function parseArgs(argv = process.argv.slice(2)) {
 
 const args = parseArgs();
 const current = loadConfig();
-const preferredModel = args.model || current.summaryModel || process.env.CODEX_PUSHDEER_SUMMARY_MODEL || "";
+const preferredModel = args.model ||
+  current.summaryModel ||
+  process.env.AGENTPING_SUMMARY_MODEL ||
+  process.env.CODEX_PUSHDEER_SUMMARY_MODEL ||
+  "";
 const timeoutMs = Number.parseInt(
   args.timeout || args["llm-timeout-ms"] || current.llmTimeoutMs || DEFAULT_LLM_TIMEOUT_MS,
   10,

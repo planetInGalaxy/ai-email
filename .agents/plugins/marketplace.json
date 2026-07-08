@@ -1,14 +1,14 @@
 {
-  "name": "codex-pushdeer",
+  "name": "agentping",
   "interface": {
-    "displayName": "Codex PushDeer"
+    "displayName": "AgentPing"
   },
   "plugins": [
     {
-      "name": "codex-pushdeer-notifier",
+      "name": "agentping",
       "source": {
         "source": "local",
-        "path": "./plugins/codex-pushdeer-notifier"
+        "path": "./plugins/agentping"
       },
       "policy": {
         "installation": "AVAILABLE",

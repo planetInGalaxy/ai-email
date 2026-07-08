@@ -7,11 +7,20 @@ import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const projectRoot = path.resolve(path.dirname(__filename), "..");
-const pluginRoot = path.join(projectRoot, "plugins", "codex-pushdeer-notifier");
+const pluginRoot = path.join(projectRoot, "plugins", "agentping");
 const notifyScript = path.join(pluginRoot, "scripts", "pushdeer-notify-event.mjs");
+const legacyNotifyScript = path.join(
+  projectRoot,
+  "plugins",
+  "codex-pushdeer-notifier",
+  "scripts",
+  "pushdeer-notify-event.mjs",
+);
 const setupScript = path.join(pluginRoot, "scripts", "setup-pushdeer-key.mjs");
-const marketplaceName = "codex-pushdeer";
-const pluginName = "codex-pushdeer-notifier";
+const marketplaceName = "agentping";
+const pluginName = "agentping";
+const legacyMarketplaceName = "codex-pushdeer";
+const legacyPluginName = "codex-pushdeer-notifier";
 
 function parseArgs(argv = process.argv.slice(2)) {
   const args = { _: [] };
@@ -57,25 +66,28 @@ function removeNotifyLine() {
   if (!fs.existsSync(configFile)) return;
 
   const desiredLine = `notify = ${JSON.stringify(["node", notifyScript])}`;
+  const legacyLine = `notify = ${JSON.stringify(["node", legacyNotifyScript])}`;
   const lines = fs.readFileSync(configFile, "utf8").split(/\r?\n/);
-  const next = lines.filter((line) => line.trim() !== desiredLine);
+  const next = lines.filter((line) => ![desiredLine, legacyLine].includes(line.trim()));
   if (next.length === lines.length) {
     console.log("Codex notify was not changed because it does not point at this checkout.");
     return;
   }
 
   if (args["dry-run"]) {
-    console.log(`[dry-run] remove PushDeer notify from ${configFile}`);
+    console.log(`[dry-run] remove AgentPing notify from ${configFile}`);
     return;
   }
 
   fs.writeFileSync(configFile, next.join("\n").replace(/\n*$/u, "\n"), "utf8");
-  console.log(`Removed PushDeer notify from ${configFile}`);
+  console.log(`Removed AgentPing notify from ${configFile}`);
 }
 
 run("codex", ["plugin", "remove", `${pluginName}@${marketplaceName}`]);
+run("codex", ["plugin", "remove", `${legacyPluginName}@${legacyMarketplaceName}`]);
 if (args["remove-marketplace"]) {
   run("codex", ["plugin", "marketplace", "remove", marketplaceName]);
+  run("codex", ["plugin", "marketplace", "remove", legacyMarketplaceName]);
 }
 removeNotifyLine();
 

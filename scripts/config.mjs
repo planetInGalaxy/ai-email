@@ -14,6 +14,7 @@ import {
   DEFAULT_SUMMARY_MODEL,
   NOTIFY_MODES,
   configPath,
+  configSourcePath,
   loadConfig,
   normalizeDespMaxChars,
   normalizeDespSeparator,
@@ -26,14 +27,14 @@ import {
   parseArgs,
   readStdin,
   saveConfigPatch,
-} from "../plugins/codex-pushdeer-notifier/scripts/pushdeer-lib.mjs";
+} from "../plugins/agentping/scripts/pushdeer-lib.mjs";
 
 const args = parseArgs();
 const command = args._[0] || "show";
 
 function usage() {
   console.log([
-    "Usage: codex-pushdeer config <command> [options]",
+    "Usage: agentping config <command> [options]",
     "",
     "Commands:",
     "  show                         Show effective config without revealing the PushDeer key",
@@ -61,6 +62,7 @@ function showConfig() {
   const config = loadConfig();
   console.log(JSON.stringify({
     configPath: configPath(),
+    configSourcePath: configSourcePath(),
     endpoint: config.endpoint || DEFAULT_ENDPOINT,
     hasPushkey: Boolean(config.pushkey),
     summaryModel: config.summaryModel || DEFAULT_SUMMARY_MODEL,

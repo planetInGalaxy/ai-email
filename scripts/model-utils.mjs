@@ -48,6 +48,7 @@ export function listCodexModels() {
     stdio: "pipe",
     env: {
       ...process.env,
+      AGENTPING_DISABLE_LLM_SUMMARY: "1",
       CODEX_PUSHDEER_DISABLE_LLM_SUMMARY: "1",
     },
   });

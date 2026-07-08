@@ -10,15 +10,16 @@ import {
   charLength,
   fallbackDescription,
   formatDesp,
+  loadConfig,
   logEvent,
   logPath,
   normalizeNotifyMode,
   normalizeSummaryCharBounds,
-} from "../plugins/codex-pushdeer-notifier/scripts/pushdeer-lib.mjs";
+} from "../plugins/agentping/scripts/pushdeer-lib.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const projectRoot = path.resolve(path.dirname(__filename), "..");
-const pluginRoot = path.join(projectRoot, "plugins", "codex-pushdeer-notifier");
+const pluginRoot = path.join(projectRoot, "plugins", "agentping");
 const eventScript = path.join(pluginRoot, "scripts", "pushdeer-notify-event.mjs");
 const notifyScript = path.join(pluginRoot, "scripts", "pushdeer-notify.mjs");
 const command = process.argv[2] || "all";
@@ -35,7 +36,7 @@ function test(name, fn) {
 }
 
 function makeTempWorkspace() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-pushdeer-test-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agentping-test-"));
   const codexHome = path.join(root, "codex-home");
   const sessionDir = path.join(codexHome, "sessions", "2026", "07", "08");
   const stateDir = path.join(root, "state");
@@ -159,10 +160,10 @@ function runEvent(workspace, notification, extraEnv = {}) {
       env: {
         ...process.env,
         CODEX_HOME: workspace.codexHome,
-        CODEX_PUSHDEER_STATE_DIR: workspace.stateDir,
-        CODEX_PUSHDEER_CONFIG: workspace.configPath,
-        CODEX_PUSHDEER_DRY_RUN: "1",
-        CODEX_PUSHDEER_FINAL_WAIT_MS: "0",
+        AGENTPING_STATE_DIR: workspace.stateDir,
+        AGENTPING_CONFIG: workspace.configPath,
+        AGENTPING_DRY_RUN: "1",
+        AGENTPING_FINAL_WAIT_MS: "0",
         ...extraEnv,
       },
     },
@@ -210,7 +211,7 @@ function testFinalOnlyNotification() {
       "turn-id": turnId,
       "input-messages": [{ text: "阶段性事件" }],
     }, {
-      CODEX_PUSHDEER_DISABLE_LLM_SUMMARY: "1",
+      AGENTPING_DISABLE_LLM_SUMMARY: "1",
     });
     assert.doesNotMatch(readLog(workspace), /PushDeer notify event sent/u);
 
@@ -220,7 +221,7 @@ function testFinalOnlyNotification() {
       "turn-id": turnId,
       "input-messages": [{ text: "最终事件" }],
     }, {
-      CODEX_PUSHDEER_DISABLE_LLM_SUMMARY: "1",
+      AGENTPING_DISABLE_LLM_SUMMARY: "1",
     });
     assert.match(readLog(workspace), /PushDeer notify event sent/u);
   } finally {
@@ -281,13 +282,15 @@ function testPushDryRun() {
         timeout: 10_000,
         env: {
           ...process.env,
-          CODEX_PUSHDEER_CONFIG: workspace.configPath,
-          CODEX_PUSHDEER_STATE_DIR: workspace.stateDir,
+          AGENTPING_CONFIG: workspace.configPath,
+          AGENTPING_STATE_DIR: workspace.stateDir,
         },
       },
     );
     assert.equal(result.status, 0, result.stderr || result.stdout);
     assert.match(result.stdout, /dryRun/u);
+    assert.doesNotMatch(result.stdout, /PDU[A-Za-z0-9_-]{12,}/u);
+    assert.match(result.stdout, /"pushkey": "\[REDACTED\]"/u);
   } finally {
     cleanupTempWorkspace(workspace);
   }
@@ -295,16 +298,16 @@ function testPushDryRun() {
 
 function testLogRotation() {
   const workspace = makeTempWorkspace();
-  const previousConfig = process.env.CODEX_PUSHDEER_CONFIG;
-  const previousStateDir = process.env.CODEX_PUSHDEER_STATE_DIR;
-  const previousMaxBytes = process.env.CODEX_PUSHDEER_LOG_MAX_BYTES;
-  const previousKeepFiles = process.env.CODEX_PUSHDEER_LOG_KEEP_FILES;
+  const previousConfig = process.env.AGENTPING_CONFIG;
+  const previousStateDir = process.env.AGENTPING_STATE_DIR;
+  const previousMaxBytes = process.env.AGENTPING_LOG_MAX_BYTES;
+  const previousKeepFiles = process.env.AGENTPING_LOG_KEEP_FILES;
 
   try {
-    process.env.CODEX_PUSHDEER_CONFIG = workspace.configPath;
-    process.env.CODEX_PUSHDEER_STATE_DIR = workspace.stateDir;
-    process.env.CODEX_PUSHDEER_LOG_MAX_BYTES = "180";
-    process.env.CODEX_PUSHDEER_LOG_KEEP_FILES = "2";
+    process.env.AGENTPING_CONFIG = workspace.configPath;
+    process.env.AGENTPING_STATE_DIR = workspace.stateDir;
+    process.env.AGENTPING_LOG_MAX_BYTES = "180";
+    process.env.AGENTPING_LOG_KEEP_FILES = "2";
 
     for (let index = 0; index < 8; index += 1) {
       logEvent("info", "rotation test", {
@@ -316,14 +319,44 @@ function testLogRotation() {
     assert.ok(fs.existsSync(logPath()), "current log should exist");
     assert.ok(fs.existsSync(logPath(1)), "rotated log should exist");
   } finally {
-    if (previousConfig === undefined) delete process.env.CODEX_PUSHDEER_CONFIG;
-    else process.env.CODEX_PUSHDEER_CONFIG = previousConfig;
-    if (previousStateDir === undefined) delete process.env.CODEX_PUSHDEER_STATE_DIR;
-    else process.env.CODEX_PUSHDEER_STATE_DIR = previousStateDir;
-    if (previousMaxBytes === undefined) delete process.env.CODEX_PUSHDEER_LOG_MAX_BYTES;
-    else process.env.CODEX_PUSHDEER_LOG_MAX_BYTES = previousMaxBytes;
-    if (previousKeepFiles === undefined) delete process.env.CODEX_PUSHDEER_LOG_KEEP_FILES;
-    else process.env.CODEX_PUSHDEER_LOG_KEEP_FILES = previousKeepFiles;
+    if (previousConfig === undefined) delete process.env.AGENTPING_CONFIG;
+    else process.env.AGENTPING_CONFIG = previousConfig;
+    if (previousStateDir === undefined) delete process.env.AGENTPING_STATE_DIR;
+    else process.env.AGENTPING_STATE_DIR = previousStateDir;
+    if (previousMaxBytes === undefined) delete process.env.AGENTPING_LOG_MAX_BYTES;
+    else process.env.AGENTPING_LOG_MAX_BYTES = previousMaxBytes;
+    if (previousKeepFiles === undefined) delete process.env.AGENTPING_LOG_KEEP_FILES;
+    else process.env.AGENTPING_LOG_KEEP_FILES = previousKeepFiles;
+    cleanupTempWorkspace(workspace);
+  }
+}
+
+function testLegacyEnvCompatibility() {
+  const workspace = makeTempWorkspace();
+  const previousAgentConfig = process.env.AGENTPING_CONFIG;
+  const previousLegacyConfig = process.env.CODEX_PUSHDEER_CONFIG;
+
+  try {
+    const legacyConfig = {
+      pushkey: "legacy-pushkey",
+      summaryModel: "legacy-model",
+      notifyMode: "long_only",
+      minDurationMs: 15000,
+    };
+    fs.writeFileSync(workspace.configPath, `${JSON.stringify(legacyConfig, null, 2)}\n`);
+    delete process.env.AGENTPING_CONFIG;
+    process.env.CODEX_PUSHDEER_CONFIG = workspace.configPath;
+
+    const config = loadConfig();
+    assert.equal(config.pushkey, "legacy-pushkey");
+    assert.equal(config.summaryModel, "legacy-model");
+    assert.equal(config.notifyMode, "long_only");
+    assert.equal(config.minDurationMs, 15000);
+  } finally {
+    if (previousAgentConfig === undefined) delete process.env.AGENTPING_CONFIG;
+    else process.env.AGENTPING_CONFIG = previousAgentConfig;
+    if (previousLegacyConfig === undefined) delete process.env.CODEX_PUSHDEER_CONFIG;
+    else process.env.CODEX_PUSHDEER_CONFIG = previousLegacyConfig;
     cleanupTempWorkspace(workspace);
   }
 }
@@ -331,7 +364,7 @@ function testLogRotation() {
 function testPushReal() {
   const result = spawnSync(
     process.execPath,
-    [notifyScript, "--title", "PushDeer 真实发送自测完成", "--desp", "这是 codex-pushdeer-notifier 的真实发送自测。"],
+    [notifyScript, "--title", "AgentPing 真实发送自测完成", "--desp", "这是 AgentPing 的真实发送自测。"],
     {
       cwd: projectRoot,
       stdio: "pipe",
@@ -348,6 +381,7 @@ const tests = {
   final: () => test("final-only notification", testFinalOnlyNotification),
   summary: () => test("LLM summary is used whole", testLlmSummaryIsUsedWhole),
   logs: () => test("log rotation", testLogRotation),
+  legacy: () => test("legacy env compatibility", testLegacyEnvCompatibility),
   push: () => test(flags.has("--real") ? "real PushDeer push" : "dry-run PushDeer push", flags.has("--real") ? testPushReal : testPushDryRun),
 };
 
@@ -356,11 +390,12 @@ if (command === "all") {
   tests.final();
   tests.summary();
   tests.logs();
+  tests.legacy();
   tests.push();
 } else if (tests[command]) {
   tests[command]();
 } else {
-  console.error("Usage: codex-pushdeer test [all|format|final|summary|logs|push] [--real]");
+  console.error("Usage: agentping test [all|format|final|summary|logs|legacy|push] [--real]");
   process.exit(2);
 }
 

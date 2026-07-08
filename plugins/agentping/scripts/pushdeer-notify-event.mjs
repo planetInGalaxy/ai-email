@@ -11,6 +11,7 @@ import {
   findLatestFinalMessage,
   formatDesp,
   hashText,
+  envValue,
   loadConfig,
   logEvent,
   markSent,
@@ -55,7 +56,7 @@ function inputMessagesText(notification) {
 }
 
 function isInternalSummaryNotification(notification) {
-  if (process.env.CODEX_PUSHDEER_SUPPRESS_NOTIFY === "1") return true;
+  if (envValue("AGENTPING_SUPPRESS_NOTIFY", "CODEX_PUSHDEER_SUPPRESS_NOTIFY") === "1") return true;
   const inputText = inputMessagesText(notification);
   return SUMMARY_PROMPT_MARKERS.some((marker) => inputText.includes(marker));
 }
@@ -65,7 +66,7 @@ function isInternalSummaryText(text) {
 }
 
 function summarizeWithCodex({ finalText, notification }) {
-  if (!finalText || process.env.CODEX_PUSHDEER_DISABLE_LLM_SUMMARY) {
+  if (!finalText || envValue("AGENTPING_DISABLE_LLM_SUMMARY", "CODEX_PUSHDEER_DISABLE_LLM_SUMMARY")) {
     return "";
   }
 
@@ -74,7 +75,7 @@ function summarizeWithCodex({ finalText, notification }) {
   const timeoutMs = config.llmTimeoutMs || DEFAULT_LLM_TIMEOUT_MS;
   const summaryMinChars = config.summaryMinChars;
   const summaryMaxChars = config.summaryMaxChars;
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-pushdeer-summary-"));
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "agentping-summary-"));
   const outputFile = path.join(tempDir, "summary.txt");
   const prompt = [
     "你是 Codex 完成通知摘要器。根据用户问题和助手最终回答，生成一条中文推送摘要。",
@@ -118,6 +119,8 @@ function summarizeWithCodex({ finalText, notification }) {
         timeout: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : DEFAULT_LLM_TIMEOUT_MS,
         env: {
           ...process.env,
+          AGENTPING_DISABLE_LLM_SUMMARY: "1",
+          AGENTPING_SUPPRESS_NOTIFY: "1",
           CODEX_PUSHDEER_DISABLE_LLM_SUMMARY: "1",
           CODEX_PUSHDEER_SUPPRESS_NOTIFY: "1",
         },
@@ -269,7 +272,7 @@ async function main() {
     desp: pushDesp,
     endpoint: config.endpoint,
     pushkey: config.pushkey,
-    dryRun: Boolean(process.env.CODEX_PUSHDEER_DRY_RUN),
+    dryRun: Boolean(envValue("AGENTPING_DRY_RUN", "CODEX_PUSHDEER_DRY_RUN")),
   });
 
   markSent(sendId);

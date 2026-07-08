@@ -15,12 +15,13 @@ import {
   DEFAULT_SUMMARY_MAX_CHARS,
   DEFAULT_SUMMARY_MIN_CHARS,
   NOTIFY_MODES,
-  configPath as pushdeerConfigPath,
+  configPath as agentpingConfigPath,
+  configSourcePath,
   loadConfig,
   redactText,
   statePath,
   takeChars,
-} from "../plugins/codex-pushdeer-notifier/scripts/pushdeer-lib.mjs";
+} from "../plugins/agentping/scripts/pushdeer-lib.mjs";
 import { chooseSummaryModel, codexConfigPath } from "./model-utils.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -28,12 +29,12 @@ const projectRoot = path.resolve(path.dirname(__filename), "..");
 const notifyScript = path.join(
   projectRoot,
   "plugins",
-  "codex-pushdeer-notifier",
+  "agentping",
   "scripts",
   "pushdeer-notify-event.mjs",
 );
-const marketplaceName = "codex-pushdeer";
-const pluginId = "codex-pushdeer-notifier@codex-pushdeer";
+const marketplaceName = "agentping";
+const pluginId = "agentping@agentping";
 
 function parseArgs(argv = process.argv.slice(2)) {
   return {
@@ -51,6 +52,8 @@ function run(command, commandArgs, options = {}) {
     timeout: options.timeout || 15_000,
     env: {
       ...process.env,
+      AGENTPING_DISABLE_LLM_SUMMARY: "1",
+      AGENTPING_SUPPRESS_NOTIFY: "1",
       CODEX_PUSHDEER_DISABLE_LLM_SUMMARY: "1",
       CODEX_PUSHDEER_SUPPRESS_NOTIFY: "1",
     },
@@ -128,9 +131,9 @@ const checks = {
   marketplace: marketplaceStatus(),
   plugin: pluginStatus(),
   notify: notifyStatus(),
-  pushdeerConfig: {
+  agentpingConfig: {
     ok: Boolean(config.pushkey),
-    detail: `${pushdeerConfigPath()} ${config.pushkey ? "has key" : "missing key"}`,
+    detail: `${agentpingConfigPath()} ${config.pushkey ? "has key" : "missing key"}; source ${configSourcePath()}`,
   },
   summaryModel: {
     ok: Boolean(modelSelection.model),
@@ -172,7 +175,8 @@ const checks = {
 const summary = {
   ok: Object.values(checks).every((item) => item.ok),
   codexConfigPath: codexConfigPath(),
-  pushdeerConfigPath: pushdeerConfigPath(),
+  agentpingConfigPath: agentpingConfigPath(),
+  configSourcePath: configSourcePath(),
   stateLogPath: statePath("notifier.log"),
   checks,
 };
@@ -180,7 +184,7 @@ const summary = {
 if (args.json) {
   console.log(JSON.stringify(summary, null, 2));
 } else {
-  console.log(`Codex PushDeer doctor (${os.platform()} ${os.arch()})`);
+  console.log(`AgentPing doctor (${os.platform()} ${os.arch()})`);
   for (const [name, check] of Object.entries(checks)) {
     console.log(`${check.ok ? "OK " : "ERR"} ${name}: ${check.detail}`);
   }

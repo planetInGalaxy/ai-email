@@ -1,0 +1,23 @@
+{
+  "name": "agentping",
+  "version": "0.4.0",
+  "description": "Notify when AI agents finish and send concise completion summaries.",
+  "author": {
+    "name": "AgentPing Notifier contributors"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "AgentPing",
+    "shortDescription": "Ping you when AI agents finish.",
+    "longDescription": "AgentPing sends a concise PushDeer summary from the Codex notify event after a turn finishes without changing the original response.",
+    "developerName": "AgentPing Notifier contributors",
+    "category": "Productivity",
+    "capabilities": [
+      "Automation"
+    ],
+    "defaultPrompt": [
+      "Configure AgentPing notifications for Codex.",
+      "Test the local AgentPing PushDeer notification command."
+    ]
+  }
+}

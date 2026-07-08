@@ -1,13 +1,26 @@
 {
-  "name": "codex-pushdeer-notifier",
-  "version": "0.3.1",
+  "name": "agentping",
+  "version": "0.4.0",
+  "description": "Notify when your AI agents finish and send concise completion summaries.",
   "private": false,
+  "keywords": [
+    "agent",
+    "codex",
+    "notification",
+    "pushdeer",
+    "notifier",
+    "automation"
+  ],
+  "author": {
+    "name": "AgentPing contributors"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/planetInGalaxy/ai-email.git"
   },
   "type": "module",
   "bin": {
+    "agentping": "bin/agentping.mjs",
     "codex-pushdeer": "bin/codex-pushdeer.mjs"
   },
   "files": [
@@ -19,7 +32,7 @@
     "package.json"
   ],
   "scripts": {
-    "check": "node --check plugins/codex-pushdeer-notifier/scripts/pushdeer-lib.mjs && node --check plugins/codex-pushdeer-notifier/scripts/pushdeer-notify.mjs && node --check plugins/codex-pushdeer-notifier/scripts/pushdeer-notify-event.mjs && node --check plugins/codex-pushdeer-notifier/scripts/pushdeer-stop-hook.mjs && node --check plugins/codex-pushdeer-notifier/scripts/setup-pushdeer-key.mjs && node --check scripts/install.mjs && node --check scripts/uninstall.mjs && node --check scripts/doctor.mjs && node --check scripts/check-models.mjs && node --check scripts/model-utils.mjs && node --check scripts/config.mjs && node --check scripts/logs.mjs && node --check scripts/test-notifier.mjs && node --check bin/codex-pushdeer.mjs",
+    "check": "node --check plugins/agentping/scripts/pushdeer-lib.mjs && node --check plugins/agentping/scripts/pushdeer-notify.mjs && node --check plugins/agentping/scripts/pushdeer-notify-event.mjs && node --check plugins/agentping/scripts/pushdeer-stop-hook.mjs && node --check plugins/agentping/scripts/setup-pushdeer-key.mjs && node --check scripts/install.mjs && node --check scripts/uninstall.mjs && node --check scripts/doctor.mjs && node --check scripts/check-models.mjs && node --check scripts/model-utils.mjs && node --check scripts/config.mjs && node --check scripts/logs.mjs && node --check scripts/test-notifier.mjs && node --check bin/agentping.mjs && node --check bin/codex-pushdeer.mjs",
     "install:local": "node scripts/install-local.mjs",
     "setup": "node scripts/install.mjs",
     "uninstall:notifier": "node scripts/uninstall.mjs",
@@ -30,6 +43,6 @@
     "check-models": "node scripts/check-models.mjs",
     "plugin:validate": "node scripts/validate-plugin.mjs",
     "config:show": "node scripts/config.mjs show",
-    "notify:dry-run": "CODEX_PUSHDEER_DRY_RUN=1 node plugins/codex-pushdeer-notifier/scripts/pushdeer-notify.mjs --title 已完成PushDeer本地通知脚本dryrun验证当前不会真实发送消息"
+    "notify:dry-run": "AGENTPING_DRY_RUN=1 node plugins/agentping/scripts/pushdeer-notify.mjs --title 已完成AgentPing本地通知脚本dryrun验证当前不会真实发送消息"
   }
 }

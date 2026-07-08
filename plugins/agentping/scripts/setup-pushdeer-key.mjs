@@ -4,6 +4,8 @@ import { stdin as input, stdout as output } from "node:process";
 import {
   DEFAULT_ENDPOINT,
   configPath,
+  configSourcePath,
+  envValue,
   loadConfig,
   parseArgs,
   readStdin,
@@ -68,8 +70,8 @@ async function resolveKey() {
     if (piped) return piped;
     return promptHidden("PushDeer pushkey: ");
   }
-  if (process.env.PUSHDEER_KEY) return process.env.PUSHDEER_KEY.trim();
-  if (process.env.CODEX_PUSHDEER_KEY) return process.env.CODEX_PUSHDEER_KEY.trim();
+  const envKey = envValue("AGENTPING_PUSHDEER_KEY", "AGENTPING_KEY", "PUSHDEER_KEY", "CODEX_PUSHDEER_KEY");
+  if (envKey) return envKey.trim();
 
   return promptHidden("PushDeer pushkey: ");
 }
@@ -78,6 +80,7 @@ if (args.show) {
   const config = loadConfig();
   console.log(JSON.stringify({
     configPath: configPath(),
+    configSourcePath: configSourcePath(),
     endpoint: config.endpoint || DEFAULT_ENDPOINT,
     hasPushkey: Boolean(config.pushkey),
     summaryModel: config.summaryModel,

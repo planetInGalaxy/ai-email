@@ -8,14 +8,14 @@ import {
   redactText,
   rotateLogIfNeeded,
   stateDir,
-} from "../plugins/codex-pushdeer-notifier/scripts/pushdeer-lib.mjs";
+} from "../plugins/agentping/scripts/pushdeer-lib.mjs";
 
 const args = parseArgs();
 const command = args._[0] || "status";
 
 function usage() {
   console.log([
-    "Usage: codex-pushdeer logs <command> [options]",
+    "Usage: agentping logs <command> [options]",
     "",
     "Commands:",
     "  status             Show log path, current size, and rotated files",

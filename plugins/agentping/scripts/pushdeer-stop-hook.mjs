@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import {
   extractFinalTextFromPayload,
   extractTurnId,
+  envValue,
   findLatestFinalMessage,
   hashText,
   logEvent,
@@ -23,7 +24,7 @@ function sleep(ms) {
 }
 
 function stopDelayMs() {
-  const raw = process.env.CODEX_PUSHDEER_STOP_DELAY_MS;
+  const raw = envValue("AGENTPING_STOP_DELAY_MS", "CODEX_PUSHDEER_STOP_DELAY_MS");
   if (raw == null || raw === "") return 500;
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isFinite(parsed) || parsed < 0) return 500;
@@ -66,7 +67,7 @@ async function main() {
     "--quiet",
   ];
 
-  if (process.env.CODEX_PUSHDEER_DRY_RUN) {
+  if (envValue("AGENTPING_DRY_RUN", "CODEX_PUSHDEER_DRY_RUN")) {
     args.push("--dry-run");
   }
 
@@ -76,7 +77,7 @@ async function main() {
     text: summary.title,
   });
 
-  if (process.env.CODEX_PUSHDEER_HOOK_SYNC) {
+  if (envValue("AGENTPING_HOOK_SYNC", "CODEX_PUSHDEER_HOOK_SYNC")) {
     await new Promise((resolve) => {
       const child = spawn(process.execPath, args, { stdio: "inherit" });
       child.on("close", () => resolve());
