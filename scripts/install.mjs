@@ -8,8 +8,11 @@ import { stdin as input, stdout as output } from "node:process";
 import { fileURLToPath } from "node:url";
 import {
   configPath as pushdeerConfigPath,
+  DEFAULT_LLM_TIMEOUT_MS,
   loadConfig as loadPushdeerConfig,
+  saveConfigPatch,
 } from "../plugins/codex-pushdeer-notifier/scripts/pushdeer-lib.mjs";
+import { chooseSummaryModel } from "./model-utils.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const projectRoot = path.resolve(path.dirname(__filename), "..");
@@ -217,11 +220,51 @@ function configurePushDeerKey() {
   run(process.execPath, setupArgs);
 }
 
+function configureSummaryModel() {
+  if (args["skip-model-check"]) {
+    console.log("Skipped summary model detection.");
+    return;
+  }
+
+  const current = loadPushdeerConfig();
+  const timeoutMs = Number.parseInt(
+    args["llm-timeout-ms"] || args.timeout || current.llmTimeoutMs || DEFAULT_LLM_TIMEOUT_MS,
+    10,
+  );
+  const selection = chooseSummaryModel({
+    preferredModel: args["summary-model"] || args.model || current.summaryModel || "",
+  });
+  const summaryModel = selection.model;
+  const llmTimeoutMs = Number.isFinite(timeoutMs) && timeoutMs > 0
+    ? timeoutMs
+    : DEFAULT_LLM_TIMEOUT_MS;
+
+  if (!summaryModel) {
+    console.log("No summary model was detected; runtime fallback will use the built-in default.");
+    return;
+  }
+
+  if (args["dry-run"]) {
+    console.log(`[dry-run] write summaryModel=${summaryModel}, llmTimeoutMs=${llmTimeoutMs} to ${pushdeerConfigPath()}`);
+    return;
+  }
+
+  saveConfigPatch({
+    summaryModel,
+    llmTimeoutMs,
+  });
+  console.log(`Configured summary model ${summaryModel} (${llmTimeoutMs}ms timeout)`);
+  if (selection.catalogError) {
+    console.log(`Model detection warning: ${selection.catalogError}`);
+  }
+}
+
 installPlugin();
 await configureNotify();
+configureSummaryModel();
 configurePushDeerKey();
 
 console.log("");
 console.log("Installation complete.");
 console.log("Start a new Codex thread or restart Codex to make sure the updated plugin and notify setting are active.");
-console.log("Use `npm run config:show` to check PushDeer config status.");
+console.log("Use `npm run doctor` to check local setup.");

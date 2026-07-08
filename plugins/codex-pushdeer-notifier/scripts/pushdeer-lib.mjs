@@ -5,6 +5,8 @@ import path from "node:path";
 
 export const DEFAULT_ENDPOINT = "https://api2.pushdeer.com/message/push";
 export const APP_NAME = "codex-pushdeer-notifier";
+export const DEFAULT_SUMMARY_MODEL = "gpt-5.4-mini";
+export const DEFAULT_LLM_TIMEOUT_MS = 12_000;
 
 export function expandHome(value) {
   if (!value) return value;
@@ -127,12 +129,36 @@ export function loadConfig() {
     config.pushkey ||
     config.pushKey ||
     "";
+  const summaryModel =
+    process.env.CODEX_PUSHDEER_SUMMARY_MODEL ||
+    config.summaryModel ||
+    config.summary_model ||
+    DEFAULT_SUMMARY_MODEL;
+  const llmTimeoutMs = Number.parseInt(
+    process.env.CODEX_PUSHDEER_LLM_TIMEOUT_MS ||
+      config.llmTimeoutMs ||
+      config.llm_timeout_ms ||
+      String(DEFAULT_LLM_TIMEOUT_MS),
+    10,
+  );
 
   return {
     ...config,
     endpoint,
     pushkey,
+    summaryModel,
+    llmTimeoutMs: Number.isFinite(llmTimeoutMs) && llmTimeoutMs > 0
+      ? llmTimeoutMs
+      : DEFAULT_LLM_TIMEOUT_MS,
   };
+}
+
+export function saveConfigPatch(patch) {
+  const current = readJsonIfExists(configPath(), {});
+  writeJson0600(configPath(), {
+    ...current,
+    ...patch,
+  });
 }
 
 export function hashText(value) {

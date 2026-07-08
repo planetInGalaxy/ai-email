@@ -5,6 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import {
   charLength,
+  DEFAULT_LLM_TIMEOUT_MS,
+  DEFAULT_SUMMARY_MODEL,
   extractFinalTextFromPayload,
   extractTurnId,
   hashText,
@@ -18,9 +20,6 @@ import {
   takeChars,
   wasAlreadySent,
 } from "./pushdeer-lib.mjs";
-
-const DEFAULT_SUMMARY_MODEL = "gpt-5.4-mini";
-const DEFAULT_LLM_TIMEOUT_MS = 12_000;
 
 function loadNotificationArg() {
   const raw = process.argv[2] || "";
@@ -54,11 +53,9 @@ function summarizeWithCodex({ finalText, notification }) {
     return "";
   }
 
-  const model = process.env.CODEX_PUSHDEER_SUMMARY_MODEL || DEFAULT_SUMMARY_MODEL;
-  const timeoutMs = Number.parseInt(
-    process.env.CODEX_PUSHDEER_LLM_TIMEOUT_MS || String(DEFAULT_LLM_TIMEOUT_MS),
-    10,
-  );
+  const config = loadConfig();
+  const model = config.summaryModel || DEFAULT_SUMMARY_MODEL;
+  const timeoutMs = config.llmTimeoutMs || DEFAULT_LLM_TIMEOUT_MS;
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-pushdeer-summary-"));
   const outputFile = path.join(tempDir, "summary.txt");
   const prompt = [
@@ -172,7 +169,7 @@ async function main() {
     sendId,
     text: pushText,
     summarySource: llmDescription ? "llm" : "fallback",
-    summaryModel: process.env.CODEX_PUSHDEER_SUMMARY_MODEL || DEFAULT_SUMMARY_MODEL,
+    summaryModel: config.summaryModel || DEFAULT_SUMMARY_MODEL,
   });
 }
 

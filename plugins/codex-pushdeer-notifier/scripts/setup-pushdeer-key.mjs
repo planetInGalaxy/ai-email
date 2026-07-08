@@ -7,8 +7,8 @@ import {
   loadConfig,
   parseArgs,
   readStdin,
+  saveConfigPatch,
   sendPushDeer,
-  writeJson0600,
 } from "./pushdeer-lib.mjs";
 
 const args = parseArgs();
@@ -80,12 +80,16 @@ if (args.show) {
     configPath: configPath(),
     endpoint: config.endpoint || DEFAULT_ENDPOINT,
     hasPushkey: Boolean(config.pushkey),
+    summaryModel: config.summaryModel,
+    llmTimeoutMs: config.llmTimeoutMs,
   }, null, 2));
   process.exit(0);
 }
 
 if (args.unset) {
-  writeJson0600(configPath(), {
+  saveConfigPatch({
+    pushkey: undefined,
+    pushKey: undefined,
     endpoint: args.endpoint || DEFAULT_ENDPOINT,
   });
   console.log(`Removed stored PushDeer key from ${configPath()}`);
@@ -99,7 +103,7 @@ if (!key) {
 }
 
 const endpoint = args.endpoint || DEFAULT_ENDPOINT;
-writeJson0600(configPath(), {
+saveConfigPatch({
   pushkey: key,
   endpoint,
 });

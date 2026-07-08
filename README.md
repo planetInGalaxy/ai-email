@@ -18,12 +18,12 @@ The notifier uses Codex `notify` with the `agent-turn-complete` event. It does n
 - macOS or Linux with Node.js available as `node`.
 - Codex CLI available as `codex`.
 - A PushDeer `pushkey`.
-- Access to the default summary model, currently `gpt-5.4-mini`.
+- Access to at least one Codex model for summary generation.
 
-If `gpt-5.4-mini` is unavailable for a user, set `CODEX_PUSHDEER_SUMMARY_MODEL` before launching Codex, for example:
+The installer detects available Codex models with `codex debug models` and stores the selected summary model in local config. If you want to force a model, pass it during install:
 
 ```bash
-export CODEX_PUSHDEER_SUMMARY_MODEL=gpt-5.5
+node scripts/install.mjs --summary-model gpt-5.5
 ```
 
 ## Install
@@ -41,6 +41,7 @@ The installer will:
 - Add this repository as a local Codex plugin marketplace named `codex-pushdeer`.
 - Install `codex-pushdeer-notifier@codex-pushdeer`.
 - Configure the top-level Codex `notify` entry in `~/.codex/config.toml`.
+- Detect and store an available Codex summary model.
 - Prompt for a PushDeer key if one is not already configured.
 
 To pass the key non-interactively:
@@ -61,7 +62,27 @@ To preview what the installer would do without changing local files:
 node scripts/install.mjs --dry-run --skip-key
 ```
 
+Useful install flags:
+
+```bash
+node scripts/install.mjs --summary-model gpt-5.5
+node scripts/install.mjs --llm-timeout-ms 15000
+node scripts/install.mjs --skip-model-check
+node scripts/install.mjs --force-notify
+```
+
 After installation, start a new Codex thread or restart Codex.
+
+## Package-Style Usage
+
+This repository is npm-package ready and exposes a `codex-pushdeer` command. After publishing to npm, users should install it globally so Codex `notify` points at a stable script path:
+
+```bash
+npm install -g codex-pushdeer-notifier
+codex-pushdeer install
+```
+
+Until it is published to npm, use the clone-based install above.
 
 ## Existing Notify Config
 
@@ -95,6 +116,17 @@ The installer writes a line like this:
 notify = ["node", "/absolute/path/to/codex-pushdeer-notifier/plugins/codex-pushdeer-notifier/scripts/pushdeer-notify-event.mjs"]
 ```
 
+The notifier config stores local runtime settings:
+
+```json
+{
+  "pushkey": "PDU...",
+  "endpoint": "https://api2.pushdeer.com/message/push",
+  "summaryModel": "gpt-5.4-mini",
+  "llmTimeoutMs": 12000
+}
+```
+
 ## Runtime Settings
 
 Optional environment variables:
@@ -107,6 +139,7 @@ export CODEX_PUSHDEER_KEY='PDU...'
 ```
 
 `CODEX_PUSHDEER_KEY` and `PUSHDEER_KEY` override the stored config key.
+`CODEX_PUSHDEER_SUMMARY_MODEL` and `CODEX_PUSHDEER_LLM_TIMEOUT_MS` override the stored summary settings.
 
 ## Manual Commands
 
@@ -114,6 +147,19 @@ Show PushDeer config status:
 
 ```bash
 npm run config:show
+```
+
+Diagnose the whole local setup:
+
+```bash
+npm run doctor
+```
+
+Detect available summary models:
+
+```bash
+npm run check-models
+npm run check-models -- --write-config
 ```
 
 Run a dry-run manual notification:
@@ -181,4 +227,20 @@ cd ai-email
 node scripts/install.mjs
 ```
 
-Pin releases with Git tags such as `v0.1.0`.
+Pin releases with Git tags such as `v0.2.0`.
+
+## Troubleshooting
+
+Run:
+
+```bash
+npm run doctor
+```
+
+Common failures:
+
+- `codex` command missing: install or log into Codex CLI first.
+- `notify` mismatch: another notifier is configured in `~/.codex/config.toml`; rerun install with `--force-notify` only if replacement is intended.
+- PushDeer key missing: run `PUSHDEER_KEY='PDU...' node scripts/install.mjs`.
+- Summary model unavailable: run `npm run check-models -- --write-config` or reinstall with `--summary-model <model>`.
+- No notification after install: restart Codex or start a new Codex thread.

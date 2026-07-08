@@ -17,6 +17,18 @@ Resolve command paths relative to this plugin directory. Do not hard-code a deve
 node plugins/codex-pushdeer-notifier/scripts/setup-pushdeer-key.mjs --show
 ```
 
+- Diagnose local setup:
+
+```bash
+node scripts/doctor.mjs
+```
+
+- Detect available summary models:
+
+```bash
+node scripts/check-models.mjs --write-config
+```
+
 - Save a PushDeer key from stdin:
 
 ```bash
@@ -39,5 +51,7 @@ CODEX_PUSHDEER_DRY_RUN=1 node plugins/codex-pushdeer-notifier/scripts/pushdeer-n
 - Use manual notification commands only for setup, tests, troubleshooting, or explicit one-off user requests.
 - Automatic completion notifications send only PushDeer `text`; do not pass `desp` for normal completion notifications.
 - Keep automatic summaries at or below 60 Chinese characters.
+- Prefer `scripts/doctor.mjs` before editing source when a user's machine behaves differently.
+- Prefer `scripts/check-models.mjs --write-config` over hard-coding model names in source.
 - Do not include secrets, long logs, full stack traces, or complete command output in notifications.
 - Treat notification failure as non-blocking for the original Codex task.
