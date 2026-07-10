@@ -17,7 +17,11 @@ export const DEFAULT_NOTIFY_MODE = "always";
 export const DEFAULT_MIN_DURATION_MS = 30_000;
 export const DEFAULT_LOG_MAX_BYTES = 2 * 1024 * 1024;
 export const DEFAULT_LOG_KEEP_FILES = 3;
+export const DEFAULT_DEBUG_LOGS = false;
+export const DEFAULT_TITLE_TEMPLATE = "{summary}";
+export const DEFAULT_DESP_TEMPLATE = "{separator}{finalText}";
 export const NOTIFY_MODES = ["always", "long_only", "errors_only", "off"];
+export const PROJECT_CONFIG_FILES = [".agentping.json", "agentping.config.json"];
 
 export function expandHome(value) {
   if (!value) return value;
@@ -54,6 +58,34 @@ export function configSourcePath() {
   if (fs.existsSync(configPath())) return configPath();
   if (fs.existsSync(legacyConfigPath())) return legacyConfigPath();
   return configPath();
+}
+
+export function findProjectConfigPath(startDir = process.cwd()) {
+  if (envValue("AGENTPING_DISABLE_PROJECT_CONFIG") === "1") return "";
+
+  let current = path.resolve(expandHome(startDir || process.cwd()));
+  try {
+    const stat = fs.statSync(current);
+    if (!stat.isDirectory()) current = path.dirname(current);
+  } catch {
+    current = process.cwd();
+  }
+
+  const root = path.parse(current).root;
+  while (true) {
+    for (const fileName of PROJECT_CONFIG_FILES) {
+      const candidate = path.join(current, fileName);
+      if (fs.existsSync(candidate)) return candidate;
+    }
+    if (current === root) return "";
+    current = path.dirname(current);
+  }
+}
+
+export function projectConfigSourcePath(startDir = process.cwd()) {
+  return envValue("AGENTPING_PROJECT_CONFIG")
+    ? expandHome(envValue("AGENTPING_PROJECT_CONFIG"))
+    : findProjectConfigPath(startDir);
 }
 
 export function stateDir() {
@@ -150,8 +182,32 @@ export function safeJsonParse(raw) {
   }
 }
 
-export function loadConfig() {
-  const config = readJsonIfExists(configSourcePath(), {});
+function stripProjectSecrets(config) {
+  if (!config || typeof config !== "object") return {};
+  const output = { ...config };
+  delete output.pushkey;
+  delete output.pushKey;
+  delete output.pushdeerKey;
+  return output;
+}
+
+function rawConfigForCwd(cwd = process.cwd()) {
+  const userConfig = readJsonIfExists(configSourcePath(), {});
+  const projectPath = projectConfigSourcePath(cwd);
+  const projectConfig = projectPath
+    ? stripProjectSecrets(readJsonIfExists(projectPath, {}))
+    : {};
+  return {
+    config: {
+      ...userConfig,
+      ...projectConfig,
+    },
+    projectPath,
+  };
+}
+
+export function loadConfig({ cwd = process.cwd() } = {}) {
+  const { config, projectPath } = rawConfigForCwd(cwd);
   const endpoint =
     envValue("AGENTPING_PUSHDEER_ENDPOINT", "AGENTPING_ENDPOINT", "PUSHDEER_ENDPOINT", "CODEX_PUSHDEER_ENDPOINT") ||
     config.pushdeerEndpoint ||
@@ -233,10 +289,25 @@ export function loadConfig() {
       String(DEFAULT_LOG_KEEP_FILES),
     10,
   );
+  const debugLogs = envValue("AGENTPING_DEBUG_LOGS", "CODEX_PUSHDEER_DEBUG_LOGS") ??
+    config.debugLogs ??
+    config.debug_logs ??
+    DEFAULT_DEBUG_LOGS;
+  const titleTemplate =
+    envValue("AGENTPING_TITLE_TEMPLATE", "CODEX_PUSHDEER_TITLE_TEMPLATE") ??
+    config.titleTemplate ??
+    config.title_template ??
+    DEFAULT_TITLE_TEMPLATE;
+  const despTemplate =
+    envValue("AGENTPING_DESP_TEMPLATE", "CODEX_PUSHDEER_DESP_TEMPLATE") ??
+    config.despTemplate ??
+    config.desp_template ??
+    DEFAULT_DESP_TEMPLATE;
   const summaryBounds = normalizeSummaryCharBounds(summaryMinChars, summaryMaxChars);
 
   return {
     ...config,
+    projectConfigPath: projectPath,
     endpoint,
     pushkey,
     summaryModel,
@@ -251,6 +322,9 @@ export function loadConfig() {
     minDurationMs: normalizeMinDurationMs(minDurationMs),
     logMaxBytes: normalizeLogMaxBytes(logMaxBytes),
     logKeepFiles: normalizeLogKeepFiles(logKeepFiles),
+    debugLogs: normalizeBoolean(debugLogs, DEFAULT_DEBUG_LOGS),
+    titleTemplate: normalizeTemplate(titleTemplate, DEFAULT_TITLE_TEMPLATE),
+    despTemplate: normalizeTemplate(despTemplate, DEFAULT_DESP_TEMPLATE),
   };
 }
 
@@ -367,6 +441,21 @@ export function normalizeLogKeepFiles(value) {
   return Math.min(parsed, 20);
 }
 
+export function normalizeBoolean(value, fallback = false) {
+  if (typeof value === "boolean") return value;
+  if (value === 1 || value === "1") return true;
+  if (value === 0 || value === "0") return false;
+  const text = String(value ?? "").trim().toLowerCase();
+  if (["true", "yes", "on", "enabled"].includes(text)) return true;
+  if (["false", "no", "off", "disabled"].includes(text)) return false;
+  return Boolean(fallback);
+}
+
+export function normalizeTemplate(value, fallback) {
+  const template = String(value ?? "");
+  return template ? template : fallback;
+}
+
 function logSettings() {
   const config = readJsonIfExists(configSourcePath(), {});
   return {
@@ -382,7 +471,32 @@ function logSettings() {
         config.log_keep_files ??
         DEFAULT_LOG_KEEP_FILES,
     ),
+    debugLogs: normalizeBoolean(
+      envValue("AGENTPING_DEBUG_LOGS", "CODEX_PUSHDEER_DEBUG_LOGS") ??
+        config.debugLogs ??
+        config.debug_logs ??
+        DEFAULT_DEBUG_LOGS,
+      DEFAULT_DEBUG_LOGS,
+    ),
   };
+}
+
+export function debugLogsEnabled(config = null) {
+  if (config && Object.prototype.hasOwnProperty.call(config, "debugLogs")) {
+    return normalizeBoolean(config.debugLogs, DEFAULT_DEBUG_LOGS);
+  }
+  return logSettings().debugLogs;
+}
+
+export function logTextMeta(name, value, { config = null, maxChars = 1000 } = {}) {
+  const text = String(value || "");
+  const meta = {
+    [`${name}Chars`]: charLength(text),
+  };
+  if (debugLogsEnabled(config)) {
+    meta[name] = takeChars(redactText(text), maxChars);
+  }
+  return meta;
 }
 
 export function logPath(index = 0) {
@@ -447,6 +561,67 @@ export function formatDesp(
   const remainingChars = normalizedMax - charLength(separatorText);
   if (remainingChars <= 0) return separatorText;
   return `${separatorText}${takeChars(text, remainingChars)}`;
+}
+
+function formatDurationMs(value) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 0) return "";
+  if (parsed < 1000) return `${parsed}ms`;
+  return `${Math.round(parsed / 100) / 10}s`;
+}
+
+export function renderTemplate(template, context = {}) {
+  return String(template || "").replace(/\{([a-zA-Z][a-zA-Z0-9_]*)\}/g, (match, name) => {
+    if (name === "duration") return formatDurationMs(context.durationMs);
+    if (!Object.prototype.hasOwnProperty.call(context, name)) return match;
+    return String(context[name] ?? "");
+  });
+}
+
+export function formatNotificationFields({
+  summary,
+  finalText,
+  config = {},
+  turnId = "",
+  terminalType = "",
+  durationMs = null,
+  summarySource = "",
+  summaryModel = "",
+  summaryElapsedMs = null,
+} = {}) {
+  const normalizedConfig = {
+    despMaxChars: normalizeDespMaxChars(config.despMaxChars),
+    despSeparator: normalizeDespSeparator(config.despSeparator),
+    titleTemplate: normalizeTemplate(config.titleTemplate, DEFAULT_TITLE_TEMPLATE),
+    despTemplate: normalizeTemplate(config.despTemplate, DEFAULT_DESP_TEMPLATE),
+  };
+  const context = {
+    summary,
+    finalText,
+    separator: normalizedConfig.despSeparator,
+    turnId,
+    terminalType,
+    durationMs,
+    summarySource,
+    summaryModel,
+    summaryElapsedMs,
+  };
+  const title = normalizeWhitespace(renderTemplate(normalizedConfig.titleTemplate, context)) ||
+    normalizeWhitespace(summary);
+  if (normalizedConfig.despMaxChars <= 0) {
+    return {
+      title,
+      desp: "",
+    };
+  }
+  const desp = takeChars(
+    renderTemplate(normalizedConfig.despTemplate, context),
+    normalizedConfig.despMaxChars,
+  );
+  return {
+    title,
+    desp,
+  };
 }
 
 function firstCompleteSegment(text, maxChars) {

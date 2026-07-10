@@ -9,17 +9,21 @@ import { fileURLToPath } from "node:url";
 import {
   DEFAULT_DESP_MAX_CHARS,
   DEFAULT_DESP_SEPARATOR,
+  DEFAULT_DESP_TEMPLATE,
   DEFAULT_FINAL_WAIT_MS,
+  DEFAULT_DEBUG_LOGS,
   DEFAULT_LOG_KEEP_FILES,
   DEFAULT_LOG_MAX_BYTES,
   DEFAULT_MIN_DURATION_MS,
   DEFAULT_NOTIFY_MODE,
   DEFAULT_SUMMARY_MAX_CHARS,
   DEFAULT_SUMMARY_MIN_CHARS,
+  DEFAULT_TITLE_TEMPLATE,
   configPath as agentpingConfigPath,
   configSourcePath,
   DEFAULT_LLM_TIMEOUT_MS,
   loadConfig as loadAgentPingConfig,
+  normalizeBoolean,
   normalizeDespMaxChars,
   normalizeDespSeparator,
   normalizeFinalWaitMs,
@@ -28,10 +32,12 @@ import {
   normalizeMinDurationMs,
   normalizeNotifyMode,
   normalizeSummaryCharBounds,
+  normalizeTemplate,
   saveConfigPatch,
 } from "../plugins/agentping/scripts/pushdeer-lib.mjs";
 import { chooseSummaryModel } from "./model-utils.mjs";
 import {
+  findTopLevelNotify,
   notifyCommandForScript,
   replaceTopLevelNotify,
 } from "./notify-config.mjs";
@@ -187,6 +193,157 @@ async function configureNotify() {
   fs.mkdirSync(path.dirname(configFile), { recursive: true });
   fs.writeFileSync(configFile, result.contents, "utf8");
   console.log(`Configured Codex notify in ${configFile}`);
+}
+
+function managedShimSource({ computerUseCommand = "" } = {}) {
+  return `#!/usr/bin/env node
+// AgentPing managed notify multiplexer. Safe to regenerate with AgentPing install.
+import { spawn, spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+const forwardedArgs = process.argv.slice(2);
+const computerUseCommand = ${JSON.stringify(computerUseCommand)};
+const agentPingScript = ${JSON.stringify(notifyScript)};
+
+function expandHome(value) {
+  if (!value) return value;
+  if (value === "~") return os.homedir();
+  if (value.startsWith("~/")) return path.join(os.homedir(), value.slice(2));
+  return value;
+}
+
+function agentPingConfigPath() {
+  return expandHome(
+    process.env.AGENTPING_CONFIG ||
+      process.env.CODEX_PUSHDEER_CONFIG ||
+      path.join(os.homedir(), ".config", "agentping", "config.json"),
+  );
+}
+
+function hasAgentPingKey() {
+  if (
+    process.env.AGENTPING_PUSHDEER_KEY ||
+    process.env.AGENTPING_KEY ||
+    process.env.PUSHDEER_KEY ||
+    process.env.CODEX_PUSHDEER_KEY
+  ) {
+    return true;
+  }
+
+  try {
+    const config = JSON.parse(fs.readFileSync(agentPingConfigPath(), "utf8"));
+    return Boolean(config.pushkey || config.pushKey);
+  } catch {
+    return false;
+  }
+}
+
+function parentLooksLikeComputerUse() {
+  try {
+    const result = spawnSync("ps", ["-p", String(process.ppid), "-o", "command="], {
+      encoding: "utf8",
+      stdio: "pipe",
+      timeout: 1000,
+    });
+    return /SkyComputerUseClient|Codex Computer Use/u.test(result.stdout || "");
+  } catch {
+    return false;
+  }
+}
+
+function log(message) {
+  try {
+    const dir = path.join(os.homedir(), ".local", "state", "agentping");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(
+      path.join(dir, "notify-shim.log"),
+      \`\${new Date().toISOString()} \${message}\\n\`,
+      { mode: 0o600 },
+    );
+  } catch {
+    // Codex notify hooks must never fail because logging failed.
+  }
+}
+
+function launch(name, command, args) {
+  try {
+    if (!command || !fs.existsSync(command)) {
+      if (command) log(\`\${name}: command not found: \${command}\`);
+      return;
+    }
+
+    const child = spawn(command, args, {
+      detached: true,
+      stdio: "ignore",
+    });
+    child.unref();
+  } catch (error) {
+    log(\`\${name}: \${error?.message || String(error)}\`);
+  }
+}
+
+if (computerUseCommand && !parentLooksLikeComputerUse()) {
+  launch("computer-use", computerUseCommand, ["turn-ended", ...forwardedArgs]);
+}
+
+if (hasAgentPingKey()) {
+  launch("agentping", process.execPath, [agentPingScript, ...forwardedArgs]);
+}
+`;
+}
+
+function topLevelComputerUseCommand() {
+  const configFile = codexConfigPath();
+  if (!fs.existsSync(configFile)) return "";
+  const target = findTopLevelNotify(fs.readFileSync(configFile, "utf8"));
+  const command = target.command || [];
+  const executable = command[0] || "";
+  return /SkyComputerUseClient|Codex Computer Use/u.test(executable) ? executable : "";
+}
+
+function shimLooksManagedOrLegacy(contents) {
+  return /AgentPing managed notify multiplexer|codex-pushdeer|CODEX_PUSHDEER|pushdeer|agentping/iu.test(contents || "");
+}
+
+function configureLegacyNotifyShim() {
+  if (args["skip-legacy-shim"]) {
+    console.log("Skipped legacy notify shim.");
+    return;
+  }
+
+  const exists = fs.existsSync(legacyNotifyMultiplexer);
+  const contents = exists ? fs.readFileSync(legacyNotifyMultiplexer, "utf8") : "";
+  const shouldWrite = Boolean(args["install-legacy-shim"]) ||
+    (exists && shimLooksManagedOrLegacy(contents));
+
+  if (!shouldWrite) {
+    return;
+  }
+
+  if (exists && !shimLooksManagedOrLegacy(contents) && !args["force-legacy-shim"]) {
+    console.log(`Skipped ${legacyNotifyMultiplexer}; it does not look like an AgentPing-managed shim.`);
+    return;
+  }
+
+  if (args["dry-run"]) {
+    console.log(`[dry-run] write legacy notify shim ${legacyNotifyMultiplexer}`);
+    return;
+  }
+
+  fs.mkdirSync(path.dirname(legacyNotifyMultiplexer), { recursive: true });
+  fs.writeFileSync(
+    legacyNotifyMultiplexer,
+    managedShimSource({ computerUseCommand: topLevelComputerUseCommand() }),
+    { mode: 0o755 },
+  );
+  try {
+    fs.chmodSync(legacyNotifyMultiplexer, 0o755);
+  } catch {
+    // Best effort only.
+  }
+  console.log(`Configured legacy notify shim at ${legacyNotifyMultiplexer}`);
 }
 
 function installPlugin() {
@@ -465,8 +622,52 @@ function configureLogSettings() {
   console.log(`Configured notifier log rotation ${logMaxBytes} bytes, keep ${logKeepFiles} files`);
 }
 
+function configureDebugLogs() {
+  if (args["debug-logs"] === undefined) {
+    return;
+  }
+
+  const debugLogs = normalizeBoolean(args["debug-logs"], DEFAULT_DEBUG_LOGS);
+
+  if (args["dry-run"]) {
+    console.log(`[dry-run] write debugLogs=${debugLogs} to ${agentpingConfigPath()}`);
+    return;
+  }
+
+  saveConfigPatch({ debugLogs });
+  console.log(`Configured debug logs ${debugLogs ? "on" : "off"}`);
+}
+
+function configureTemplates() {
+  const hasExplicitValue =
+    args["title-template"] !== undefined ||
+    args["desp-template"] !== undefined;
+
+  if (!hasExplicitValue) {
+    return;
+  }
+
+  const current = loadAgentPingConfig();
+  const patch = {};
+  if (args["title-template"] !== undefined) {
+    patch.titleTemplate = normalizeTemplate(args["title-template"], current.titleTemplate || DEFAULT_TITLE_TEMPLATE);
+  }
+  if (args["desp-template"] !== undefined) {
+    patch.despTemplate = normalizeTemplate(args["desp-template"], current.despTemplate || DEFAULT_DESP_TEMPLATE);
+  }
+
+  if (args["dry-run"]) {
+    console.log(`[dry-run] write notification templates to ${agentpingConfigPath()}`);
+    return;
+  }
+
+  saveConfigPatch(patch);
+  console.log("Configured notification templates");
+}
+
 installPlugin();
 await configureNotify();
+configureLegacyNotifyShim();
 migrateLegacyConfig();
 configureSummaryModel();
 configureSummaryCharBounds();
@@ -475,6 +676,8 @@ configureDespSeparator();
 configureFinalWaitMs();
 configureNotificationMode();
 configureLogSettings();
+configureDebugLogs();
+configureTemplates();
 configurePushDeerKey();
 
 console.log("");

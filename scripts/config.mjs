@@ -1,5 +1,8 @@
 #!/usr/bin/env node
+import fs from "node:fs";
+import path from "node:path";
 import {
+  DEFAULT_DEBUG_LOGS,
   DEFAULT_DESP_MAX_CHARS,
   DEFAULT_DESP_SEPARATOR,
   DEFAULT_ENDPOINT,
@@ -9,13 +12,17 @@ import {
   DEFAULT_LOG_MAX_BYTES,
   DEFAULT_MIN_DURATION_MS,
   DEFAULT_NOTIFY_MODE,
+  DEFAULT_DESP_TEMPLATE,
   DEFAULT_SUMMARY_MAX_CHARS,
   DEFAULT_SUMMARY_MIN_CHARS,
   DEFAULT_SUMMARY_MODEL,
+  DEFAULT_TITLE_TEMPLATE,
   NOTIFY_MODES,
+  PROJECT_CONFIG_FILES,
   configPath,
   configSourcePath,
   loadConfig,
+  normalizeBoolean,
   normalizeDespMaxChars,
   normalizeDespSeparator,
   normalizeFinalWaitMs,
@@ -24,9 +31,12 @@ import {
   normalizeMinDurationMs,
   normalizeNotifyMode,
   normalizeSummaryCharBounds,
+  normalizeTemplate,
   parseArgs,
+  projectConfigSourcePath,
   readStdin,
   saveConfigPatch,
+  writeJson0600,
 } from "../plugins/agentping/scripts/pushdeer-lib.mjs";
 
 const args = parseArgs();
@@ -52,9 +62,15 @@ function usage() {
     "  set-min-duration <ms>        Configure long_only threshold",
     "  set-log-max-bytes <bytes>    Configure log rotation size, 0 disables rotation",
     "  set-log-keep-files <count>   Configure number of rotated logs to keep",
+    "  set-debug-logs <on|off>      Include text/stderr previews in local logs",
+    "  set-title-template <text>    Configure PushDeer title template",
+    "  set-desp-template <text>     Configure PushDeer desp template",
+    "  reset-templates              Restore default notification templates",
+    "  init-project [path]          Create a project-level .agentping.json without secrets",
     "  reset [--forget-key]         Reset runtime options to defaults",
     "",
     `Modes: ${NOTIFY_MODES.join(", ")}`,
+    `Template placeholders: {summary}, {finalText}, {separator}, {duration}, {turnId}, {terminalType}, {summarySource}, {summaryModel}, {summaryElapsedMs}`,
   ].join("\n"));
 }
 
@@ -63,6 +79,7 @@ function showConfig() {
   console.log(JSON.stringify({
     configPath: configPath(),
     configSourcePath: configSourcePath(),
+    projectConfigPath: config.projectConfigPath || projectConfigSourcePath(),
     endpoint: config.endpoint || DEFAULT_ENDPOINT,
     hasPushkey: Boolean(config.pushkey),
     summaryModel: config.summaryModel || DEFAULT_SUMMARY_MODEL,
@@ -76,6 +93,9 @@ function showConfig() {
     minDurationMs: config.minDurationMs,
     logMaxBytes: config.logMaxBytes,
     logKeepFiles: config.logKeepFiles,
+    debugLogs: config.debugLogs,
+    titleTemplate: config.titleTemplate,
+    despTemplate: config.despTemplate,
   }, null, 2));
 }
 
@@ -192,6 +212,66 @@ function setLogKeepFiles() {
   savePatch({ logKeepFiles }, `Configured rotated log retention ${logKeepFiles} files`);
 }
 
+function setDebugLogs() {
+  const value = rawValue(1, "value", "enabled");
+  if (value === undefined) {
+    console.error("debug log value is required: on or off.");
+    process.exit(2);
+  }
+  const debugLogs = normalizeBoolean(value, DEFAULT_DEBUG_LOGS);
+  savePatch({ debugLogs }, `Configured debug logs ${debugLogs ? "on" : "off"}`);
+}
+
+function setTitleTemplate() {
+  const value = rawValue(1, "value", "template");
+  if (value === undefined) {
+    console.error("title template is required.");
+    process.exit(2);
+  }
+  const titleTemplate = normalizeTemplate(value, DEFAULT_TITLE_TEMPLATE);
+  savePatch({ titleTemplate }, `Configured title template ${JSON.stringify(titleTemplate)}`);
+}
+
+function setDespTemplate() {
+  const value = rawValue(1, "value", "template");
+  if (value === undefined) {
+    console.error("desp template is required.");
+    process.exit(2);
+  }
+  const despTemplate = normalizeTemplate(value, DEFAULT_DESP_TEMPLATE);
+  savePatch({ despTemplate }, `Configured desp template ${JSON.stringify(despTemplate)}`);
+}
+
+function resetTemplates() {
+  savePatch({
+    titleTemplate: DEFAULT_TITLE_TEMPLATE,
+    despTemplate: DEFAULT_DESP_TEMPLATE,
+  }, "Reset notification templates");
+}
+
+function initProjectConfig() {
+  const targetDir = path.resolve(rawValue(1, "path") || process.cwd());
+  const target = path.join(targetDir, PROJECT_CONFIG_FILES[0]);
+  if (fs.existsSync(target) && !args.force) {
+    console.error(`${target} already exists. Re-run with --force to overwrite it.`);
+    process.exit(2);
+  }
+  writeJson0600(target, {
+    summaryModel: DEFAULT_SUMMARY_MODEL,
+    summaryMinChars: DEFAULT_SUMMARY_MIN_CHARS,
+    summaryMaxChars: DEFAULT_SUMMARY_MAX_CHARS,
+    llmTimeoutMs: DEFAULT_LLM_TIMEOUT_MS,
+    despMaxChars: DEFAULT_DESP_MAX_CHARS,
+    despSeparator: DEFAULT_DESP_SEPARATOR,
+    finalWaitMs: DEFAULT_FINAL_WAIT_MS,
+    notifyMode: DEFAULT_NOTIFY_MODE,
+    minDurationMs: DEFAULT_MIN_DURATION_MS,
+    titleTemplate: DEFAULT_TITLE_TEMPLATE,
+    despTemplate: DEFAULT_DESP_TEMPLATE,
+  });
+  console.log(`Created project AgentPing config at ${target}`);
+}
+
 function resetConfig() {
   const patch = {
     endpoint: DEFAULT_ENDPOINT,
@@ -206,6 +286,9 @@ function resetConfig() {
     minDurationMs: DEFAULT_MIN_DURATION_MS,
     logMaxBytes: DEFAULT_LOG_MAX_BYTES,
     logKeepFiles: DEFAULT_LOG_KEEP_FILES,
+    debugLogs: DEFAULT_DEBUG_LOGS,
+    titleTemplate: DEFAULT_TITLE_TEMPLATE,
+    despTemplate: DEFAULT_DESP_TEMPLATE,
   };
   if (args["forget-key"]) {
     patch.pushkey = undefined;
@@ -256,6 +339,21 @@ switch (command) {
     break;
   case "set-log-keep-files":
     setLogKeepFiles();
+    break;
+  case "set-debug-logs":
+    setDebugLogs();
+    break;
+  case "set-title-template":
+    setTitleTemplate();
+    break;
+  case "set-desp-template":
+    setDespTemplate();
+    break;
+  case "reset-templates":
+    resetTemplates();
+    break;
+  case "init-project":
+    initProjectConfig();
     break;
   case "reset":
     resetConfig();

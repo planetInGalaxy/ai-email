@@ -4,6 +4,7 @@ import {
   envValue,
   loadConfig,
   logEvent,
+  logTextMeta,
   parseArgs,
   sendPushDeer,
 } from "./pushdeer-lib.mjs";
@@ -38,8 +39,8 @@ try {
   logEvent("info", "PushDeer notification sent", {
     dryRun,
     status: result.status,
-    title,
-    desp,
+    ...logTextMeta("title", title, { config }),
+    ...logTextMeta("desp", desp, { config }),
   });
 
   if (!quiet) {
@@ -48,8 +49,8 @@ try {
 } catch (error) {
   logEvent("error", "PushDeer notification failed", {
     error: error?.message || String(error),
-    title,
-    desp,
+    ...logTextMeta("title", title, { config }),
+    ...logTextMeta("desp", desp, { config }),
   });
   if (!quiet) {
     console.error(error?.message || String(error));

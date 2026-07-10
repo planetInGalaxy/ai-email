@@ -17,7 +17,11 @@ AgentPing uses Codex `notify` with the `agent-turn-complete` event. It does not 
 - Does not hard-truncate LLM summaries; semantic completeness is preferred if the model slightly exceeds the configured range.
 - Keeps the default `desp` at or below 300 characters.
 - Supports notification modes: always, long tasks only, errors only, or off.
+- Supports notification templates for PushDeer `text` and `desp`.
+- Supports project-level `.agentping.json` config, without project-stored PushDeer keys.
 - Rotates local notifier logs so troubleshooting data does not grow without bound.
+- Keeps local logs privacy-safe by default; full text/stderr previews require `debugLogs`.
+- Records summary source, elapsed time, and fallback error reason in notifier logs.
 - Includes local self-test commands that use temporary files and dry-run PushDeer sends.
 - Stores each user's PushDeer key outside the repository.
 - Keeps compatibility with the old `codex-pushdeer` CLI and `CODEX_PUSHDEER_*` environment variables during migration.
@@ -84,10 +88,15 @@ node scripts/install.mjs --final-wait-ms 8000
 node scripts/install.mjs --notify-mode always
 node scripts/install.mjs --notify-mode long_only --min-duration-ms 30000
 node scripts/install.mjs --log-max-bytes 2097152 --log-keep-files 3
+node scripts/install.mjs --debug-logs off
+node scripts/install.mjs --title-template "{summary}"
+node scripts/install.mjs --desp-template "{separator}{finalText}"
 node scripts/install.mjs --no-desp
 node scripts/install.mjs --no-desp-separator
 node scripts/install.mjs --skip-model-check
 node scripts/install.mjs --force-notify
+node scripts/install.mjs --install-legacy-shim
+node scripts/install.mjs --skip-legacy-shim
 ```
 
 After installation, start a new Codex thread or restart Codex.
@@ -110,6 +119,8 @@ The old `codex-pushdeer` command remains as a compatibility alias, but new docs 
 Codex supports a user-level `notify` command in `~/.codex/config.toml`. If the installer detects an existing top-level `notify`, it will ask before replacing it.
 
 Codex Desktop integrations can wrap an existing notifier with `--previous-notify`, for example when Computer Use owns the top-level `notify` command. In that case, the installer preserves the wrapper and updates the wrapped previous notifier to AgentPing when it points at the old Codex PushDeer notifier or the legacy local multiplexer. `agentping doctor` treats this wrapper chain as a valid AgentPing setup.
+
+If `~/.codex/notify-multiplexer.mjs` already exists and looks like an AgentPing/Codex PushDeer shim, the installer refreshes it to call the current AgentPing checkout. This improves old-session coverage because older Codex tasks that still call the legacy multiplexer path can route to the new notifier without a full restart. If a session cached a completely different command at startup, Codex still needs a new task or restart.
 
 For non-interactive installs that should replace the existing notifier:
 
@@ -155,9 +166,14 @@ The notifier config stores local runtime settings:
   "notifyMode": "always",
   "minDurationMs": 30000,
   "logMaxBytes": 2097152,
-  "logKeepFiles": 3
+  "logKeepFiles": 3,
+  "debugLogs": false,
+  "titleTemplate": "{summary}",
+  "despTemplate": "{separator}{finalText}"
 }
 ```
+
+Project-level settings can be stored in `.agentping.json` or `agentping.config.json` in a project directory. AgentPing searches upward from the current working directory and overlays that file on top of the user config. Project config intentionally ignores `pushkey`/`pushKey`, so secrets stay in `~/.config/agentping/config.json`.
 
 ## Runtime Settings
 
@@ -175,6 +191,9 @@ export AGENTPING_NOTIFY_MODE=always
 export AGENTPING_MIN_DURATION_MS=30000
 export AGENTPING_LOG_MAX_BYTES=2097152
 export AGENTPING_LOG_KEEP_FILES=3
+export AGENTPING_DEBUG_LOGS=0
+export AGENTPING_TITLE_TEMPLATE='{summary}'
+export AGENTPING_DESP_TEMPLATE='{separator}{finalText}'
 export AGENTPING_PUSHDEER_ENDPOINT=https://api2.pushdeer.com/message/push
 export AGENTPING_PUSHDEER_KEY='PDU...'
 ```
@@ -188,6 +207,9 @@ Summary length is prompt-guided, not enforced by hard truncation. If the model r
 `AGENTPING_NOTIFY_MODE` controls whether automatic notifications send. Valid values are `always`, `long_only`, `errors_only`, and `off`. The default is `always`.
 `AGENTPING_MIN_DURATION_MS` is used by `long_only`; turns shorter than this threshold are skipped.
 `AGENTPING_LOG_MAX_BYTES` and `AGENTPING_LOG_KEEP_FILES` control local log rotation. Set `AGENTPING_LOG_MAX_BYTES=0` to disable rotation.
+`AGENTPING_DEBUG_LOGS=1` allows local logs to include redacted title/desp/stderr previews. By default logs keep operational metadata such as lengths, status, summary source, elapsed time, and errors.
+`AGENTPING_TITLE_TEMPLATE` and `AGENTPING_DESP_TEMPLATE` customize PushDeer fields. Supported placeholders are `{summary}`, `{finalText}`, `{separator}`, `{duration}`, `{turnId}`, `{terminalType}`, `{summarySource}`, `{summaryModel}`, and `{summaryElapsedMs}`.
+`AGENTPING_PROJECT_CONFIG=/path/to/.agentping.json` forces a project config file; `AGENTPING_DISABLE_PROJECT_CONFIG=1` disables project config discovery.
 
 Legacy `CODEX_PUSHDEER_*` variables and the old `~/.config/codex-pushdeer-notifier/config.json` config file are still read during migration. New writes go to `~/.config/agentping/config.json`.
 
@@ -205,6 +227,11 @@ agentping config set-separator "\n-----\n"
 agentping config set-mode always
 agentping config set-mode long_only --min-duration-ms 30000
 agentping config set-mode off
+agentping config set-debug-logs off
+agentping config set-title-template "{summary}"
+agentping config set-desp-template "{separator}{finalText}"
+agentping config reset-templates
+agentping config init-project
 ```
 
 Diagnose the whole local setup:
@@ -218,6 +245,8 @@ Detect available summary models:
 ```bash
 npm run check-models
 npm run check-models -- --write-config
+npm run check-models -- --benchmark --runs 3
+npm run check-models -- --benchmark --write-fastest
 ```
 
 Run a dry-run manual notification:
@@ -230,6 +259,7 @@ Inspect and manage local notifier logs:
 
 ```bash
 agentping logs status
+agentping logs summary
 agentping logs tail 20
 agentping logs rotate
 agentping logs clear
@@ -275,6 +305,8 @@ Each automatic notification summarizes the latest user prompt and assistant answ
 
 The notifier redacts common PushDeer keys, OpenAI-style keys, bearer tokens, long URLs, and query token parameters before summarization and logging. This is a best-effort filter, not a complete data-loss-prevention system.
 
+Local logs do not include full notification text, raw final answers, or summary command stderr unless `debugLogs`/`AGENTPING_DEBUG_LOGS=1` is enabled.
+
 Do not install this notifier in environments where sending answer summaries to PushDeer is not allowed.
 
 Never commit a PushDeer key to this repository.
@@ -318,5 +350,7 @@ Common failures:
 - PushDeer key missing: run `AGENTPING_PUSHDEER_KEY='PDU...' node scripts/install.mjs`.
 - Summary model unavailable: run `npm run check-models -- --write-config` or reinstall with `--summary-model <model>`.
 - No notification after install: restart Codex or start a new Codex thread.
+- Old Codex task does not notify after install: run `node scripts/install.mjs --install-legacy-shim`, then finish the old task again. This only helps tasks that call `~/.codex/notify-multiplexer.mjs` at completion.
 - Notification arrives for tasks you do not care about: use `agentping config set-mode long_only --min-duration-ms 30000` or `agentping config set-mode off`.
 - Log file is too large: run `agentping logs rotate`, `agentping logs clear`, or reduce `logMaxBytes`.
+- Need to debug summary timeouts: run `agentping check-models --benchmark --runs 3` and set the fastest stable model with `agentping check-models --benchmark --write-fastest`.

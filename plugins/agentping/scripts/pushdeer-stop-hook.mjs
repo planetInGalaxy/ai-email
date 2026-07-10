@@ -8,7 +8,9 @@ import {
   envValue,
   findLatestFinalMessage,
   hashText,
+  loadConfig,
   logEvent,
+  logTextMeta,
   markSent,
   readStdin,
   safeJsonParse,
@@ -51,6 +53,7 @@ async function main() {
 
   const summary = summarizeFinalText(finalText, payload);
   const sendId = turnId || hashText(`${source}:${finalText}:${Date.now()}`).slice(0, 24);
+  const config = loadConfig();
 
   if (wasAlreadySent(sendId)) {
     logEvent("info", "Skipping duplicate PushDeer hook notification", { sendId, source });
@@ -74,7 +77,7 @@ async function main() {
   logEvent("info", "Starting PushDeer hook notification", {
     sendId,
     source,
-    text: summary.title,
+    ...logTextMeta("title", summary.title, { config }),
   });
 
   if (envValue("AGENTPING_HOOK_SYNC", "CODEX_PUSHDEER_HOOK_SYNC")) {

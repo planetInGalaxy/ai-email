@@ -81,6 +81,7 @@ if (args.show) {
   console.log(JSON.stringify({
     configPath: configPath(),
     configSourcePath: configSourcePath(),
+    projectConfigPath: config.projectConfigPath,
     endpoint: config.endpoint || DEFAULT_ENDPOINT,
     hasPushkey: Boolean(config.pushkey),
     summaryModel: config.summaryModel,
@@ -94,6 +95,9 @@ if (args.show) {
     minDurationMs: config.minDurationMs,
     logMaxBytes: config.logMaxBytes,
     logKeepFiles: config.logKeepFiles,
+    debugLogs: config.debugLogs,
+    titleTemplate: config.titleTemplate,
+    despTemplate: config.despTemplate,
   }, null, 2));
   process.exit(0);
 }

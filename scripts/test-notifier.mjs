@@ -6,9 +6,12 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  DEFAULT_DESP_TEMPLATE,
   DEFAULT_DESP_SEPARATOR,
+  DEFAULT_TITLE_TEMPLATE,
   charLength,
   fallbackDescription,
+  formatNotificationFields,
   formatDesp,
   loadConfig,
   logEvent,
@@ -63,6 +66,9 @@ function makeTempWorkspace() {
     minDurationMs: 30000,
     logMaxBytes: 2097152,
     logKeepFiles: 3,
+    debugLogs: false,
+    titleTemplate: DEFAULT_TITLE_TEMPLATE,
+    despTemplate: DEFAULT_DESP_TEMPLATE,
   }, null, 2));
   return {
     root,
@@ -205,6 +211,21 @@ function testFormatHelpers() {
     summaryMaxChars: 8,
   });
   assert.equal(fallback, "第一句话完整。");
+  const fields = formatNotificationFields({
+    summary: "任务完成",
+    finalText: "完整回答内容",
+    config: {
+      despMaxChars: 20,
+      despSeparator: "\n---\n",
+      titleTemplate: "[{summarySource}] {summary}",
+      despTemplate: "{separator}{duration} {finalText}",
+    },
+    durationMs: 12345,
+    summarySource: "llm",
+  });
+  assert.equal(fields.title, "[llm] 任务完成");
+  assert.ok(fields.desp.includes("12.3s"));
+  assert.ok(charLength(fields.desp) <= 20);
 }
 
 function testFinalOnlyNotification() {
@@ -266,11 +287,52 @@ function testLlmSummaryIsUsedWhole() {
       type: "agent-turn-complete",
       "turn-id": turnId,
       "input-messages": [{ text: "请完成任务并总结" }],
-    }, stubEnv);
+    }, {
+      ...stubEnv,
+      AGENTPING_DEBUG_LOGS: "1",
+    });
     const log = readLog(workspace);
     assert.match(log, /PushDeer notify event sent/u);
     assert.match(log, new RegExp(summary.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "u"));
+    assert.match(log, /summaryElapsedMs/u);
   } finally {
+    cleanupTempWorkspace(workspace);
+  }
+}
+
+function testProjectConfigOverrides() {
+  const workspace = makeTempWorkspace();
+  const previousConfig = process.env.AGENTPING_CONFIG;
+  const previousProjectConfig = process.env.AGENTPING_PROJECT_CONFIG;
+
+  try {
+    const projectDir = path.join(workspace.root, "project", "nested");
+    fs.mkdirSync(projectDir, { recursive: true });
+    fs.writeFileSync(path.join(workspace.root, "project", ".agentping.json"), JSON.stringify({
+      pushkey: "project-should-not-win",
+      notifyMode: "long_only",
+      minDurationMs: 12345,
+      titleTemplate: "项目 {summary}",
+    }, null, 2));
+    fs.writeFileSync(workspace.configPath, JSON.stringify({
+      pushkey: "user-key",
+      notifyMode: "always",
+      minDurationMs: 30000,
+    }, null, 2));
+    process.env.AGENTPING_CONFIG = workspace.configPath;
+    delete process.env.AGENTPING_PROJECT_CONFIG;
+
+    const config = loadConfig({ cwd: projectDir });
+    assert.equal(config.pushkey, "user-key");
+    assert.equal(config.notifyMode, "long_only");
+    assert.equal(config.minDurationMs, 12345);
+    assert.equal(config.titleTemplate, "项目 {summary}");
+    assert.ok(config.projectConfigPath.endsWith(".agentping.json"));
+  } finally {
+    if (previousConfig === undefined) delete process.env.AGENTPING_CONFIG;
+    else process.env.AGENTPING_CONFIG = previousConfig;
+    if (previousProjectConfig === undefined) delete process.env.AGENTPING_PROJECT_CONFIG;
+    else process.env.AGENTPING_PROJECT_CONFIG = previousProjectConfig;
     cleanupTempWorkspace(workspace);
   }
 }
@@ -444,6 +506,7 @@ const tests = {
   summary: () => test("LLM summary is used whole", testLlmSummaryIsUsedWhole),
   logs: () => test("log rotation", testLogRotation),
   legacy: () => test("legacy env compatibility", testLegacyEnvCompatibility),
+  project: () => test("project config overrides", testProjectConfigOverrides),
   notify: () => test("notify config helpers", testNotifyConfigHelpers),
   push: () => test(flags.has("--real") ? "real PushDeer push" : "dry-run PushDeer push", flags.has("--real") ? testPushReal : testPushDryRun),
 };
@@ -454,6 +517,7 @@ if (command === "all") {
   tests.summary();
   tests.logs();
   tests.legacy();
+  tests.project();
   tests.notify();
   tests.push();
 } else if (tests[command]) {

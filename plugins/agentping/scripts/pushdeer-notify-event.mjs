@@ -9,17 +9,17 @@ import {
   DEFAULT_SUMMARY_MODEL,
   extractTurnId,
   findLatestFinalMessage,
-  formatDesp,
+  formatNotificationFields,
   hashText,
   envValue,
   loadConfig,
+  logTextMeta,
   logEvent,
   markSent,
   redactText,
   safeJsonParse,
   sendPushDeer,
   summarizeFinalText,
-  takeChars,
   wasAlreadySent,
 } from "./pushdeer-lib.mjs";
 
@@ -67,7 +67,11 @@ function isInternalSummaryText(text) {
 
 function summarizeWithCodex({ finalText, notification }) {
   if (!finalText || envValue("AGENTPING_DISABLE_LLM_SUMMARY", "CODEX_PUSHDEER_DISABLE_LLM_SUMMARY")) {
-    return "";
+    return {
+      text: "",
+      elapsedMs: 0,
+      error: "disabled",
+    };
   }
 
   const config = loadConfig();
@@ -91,6 +95,7 @@ function summarizeWithCodex({ finalText, notification }) {
     "助手完整回答：",
     redactText(finalText),
   ].join("\n");
+  const startedAt = Date.now();
 
   try {
     const result = spawnSync(
@@ -126,19 +131,31 @@ function summarizeWithCodex({ finalText, notification }) {
         },
       },
     );
+    const elapsedMs = Date.now() - startedAt;
 
     if (result.status !== 0) {
       logEvent("warn", "LLM summary command failed", {
         model,
         status: result.status,
         signal: result.signal,
-        stderr: takeChars(result.stderr, 1000),
+        elapsedMs,
+        ...logTextMeta("stderr", result.stderr, { config, maxChars: 1000 }),
       });
-      return "";
+      return {
+        text: "",
+        elapsedMs,
+        error: result.signal || `exit_${result.status}`,
+      };
     }
 
     const summary = normalizeSummary(fs.readFileSync(outputFile, "utf8"));
-    if (!summary) return "";
+    if (!summary) {
+      return {
+        text: "",
+        elapsedMs,
+        error: "empty",
+      };
+    }
     const summaryChars = charLength(summary);
     if (summaryChars < summaryMinChars || summaryChars > summaryMaxChars) {
       logEvent("info", "LLM summary outside configured length range", {
@@ -148,13 +165,23 @@ function summarizeWithCodex({ finalText, notification }) {
         summaryMaxChars,
       });
     }
-    return summary;
+    return {
+      text: summary,
+      elapsedMs,
+      error: "",
+    };
   } catch (error) {
+    const elapsedMs = Date.now() - startedAt;
     logEvent("warn", "LLM summary command errored", {
       model,
+      elapsedMs,
       error: error?.message || String(error),
     });
-    return "";
+    return {
+      text: "",
+      elapsedMs,
+      error: error?.message || String(error),
+    };
   } finally {
     try {
       fs.rmSync(tempDir, { recursive: true, force: true });
@@ -260,11 +287,19 @@ async function main() {
   }
 
   const fallbackSummary = summarizeFinalText(finalText, config);
-  const llmDescription = summarizeWithCodex({ finalText, notification });
-  const pushText = llmDescription || fallbackSummary.desp;
-  const pushDesp = formatDesp(finalText, {
-    maxChars: config.despMaxChars,
-    separator: config.despSeparator,
+  const llmSummary = summarizeWithCodex({ finalText, notification });
+  const summarySource = llmSummary.text ? "llm" : "fallback";
+  const summaryText = llmSummary.text || fallbackSummary.desp;
+  const { title: pushText, desp: pushDesp } = formatNotificationFields({
+    summary: summaryText,
+    finalText,
+    config,
+    turnId: sessionFinal.turnId || turnId,
+    terminalType: sessionFinal.terminalType,
+    durationMs: sessionFinal.durationMs,
+    summarySource,
+    summaryModel: config.summaryModel || DEFAULT_SUMMARY_MODEL,
+    summaryElapsedMs: llmSummary.elapsedMs,
   });
 
   await sendPushDeer({
@@ -278,15 +313,17 @@ async function main() {
   markSent(sendId);
   logEvent("info", "PushDeer notify event sent", {
     sendId,
-    text: pushText,
+    ...logTextMeta("title", pushText, { config }),
     despChars: charLength(pushDesp),
     despMaxChars: config.despMaxChars,
     finalWaitMs: config.finalWaitMs,
     notifyMode: config.notifyMode,
     terminalType: sessionFinal.terminalType,
     durationMs: sessionFinal.durationMs,
-    summarySource: llmDescription ? "llm" : "fallback",
+    summarySource,
     summaryModel: config.summaryModel || DEFAULT_SUMMARY_MODEL,
+    summaryElapsedMs: llmSummary.elapsedMs,
+    summaryError: llmSummary.error,
   });
 }
 

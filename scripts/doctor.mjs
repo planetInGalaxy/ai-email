@@ -7,13 +7,16 @@ import { fileURLToPath } from "node:url";
 import {
   DEFAULT_DESP_MAX_CHARS,
   DEFAULT_DESP_SEPARATOR,
+  DEFAULT_DESP_TEMPLATE,
   DEFAULT_FINAL_WAIT_MS,
+  DEFAULT_DEBUG_LOGS,
   DEFAULT_LOG_KEEP_FILES,
   DEFAULT_LOG_MAX_BYTES,
   DEFAULT_MIN_DURATION_MS,
   DEFAULT_NOTIFY_MODE,
   DEFAULT_SUMMARY_MAX_CHARS,
   DEFAULT_SUMMARY_MIN_CHARS,
+  DEFAULT_TITLE_TEMPLATE,
   NOTIFY_MODES,
   configPath as agentpingConfigPath,
   configSourcePath,
@@ -129,12 +132,53 @@ function pluginStatus() {
 function logStatus() {
   const logFile = statePath("notifier.log");
   if (!fs.existsSync(logFile)) return { ok: true, detail: "no notifier log yet" };
-  const lines = fs.readFileSync(logFile, "utf8").trim().split(/\n+/).slice(-3);
+  const stat = fs.statSync(logFile);
+  const lines = fs.readFileSync(logFile, "utf8").trim().split(/\n+/).slice(-100);
+  const entries = lines
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+  const counts = entries.reduce((acc, entry) => {
+    const level = entry.level || "unknown";
+    acc[level] = (acc[level] || 0) + 1;
+    return acc;
+  }, {});
+  const latest = [...entries].reverse().find((entry) => entry.message);
+  const lastProblem = [...entries].reverse().find((entry) => entry.level === "warn" || entry.level === "error");
+  const parts = [
+    `${stat.size} bytes`,
+    `${entries.length} recent entries`,
+    `levels ${Object.entries(counts).map(([level, count]) => `${level}:${count}`).join(", ") || "none"}`,
+  ];
+  if (latest) {
+    parts.push(`latest ${latest.ts || "unknown"} ${latest.message}`);
+  }
+  if (lastProblem) {
+    parts.push(`last problem ${lastProblem.ts || "unknown"} ${lastProblem.message}`);
+  }
   return {
     ok: true,
-    detail: lines
-      .map((line) => takeChars(redactText(line), 1000))
-      .join("\n"),
+    detail: takeChars(redactText(parts.join("; ")), 1000),
+  };
+}
+
+function legacyShimStatus() {
+  if (!fs.existsSync(legacyNotifyMultiplexer)) {
+    return {
+      ok: true,
+      detail: "not installed",
+    };
+  }
+  const contents = fs.readFileSync(legacyNotifyMultiplexer, "utf8");
+  const managed = /AgentPing managed notify multiplexer|agentping/iu.test(contents);
+  return {
+    ok: managed,
+    detail: managed ? `${legacyNotifyMultiplexer} is AgentPing-compatible` : `${legacyNotifyMultiplexer} exists but is not recognized`,
   };
 }
 
@@ -146,6 +190,7 @@ const checks = {
   marketplace: marketplaceStatus(),
   plugin: pluginStatus(),
   notify: notifyStatus(),
+  legacyShim: legacyShimStatus(),
   agentpingConfig: {
     ok: Boolean(config.pushkey),
     detail: `${agentpingConfigPath()} ${config.pushkey ? "has key" : "missing key"}; source ${configSourcePath()}`,
@@ -183,6 +228,18 @@ const checks = {
   logRotation: {
     ok: config.logMaxBytes >= 0 && config.logKeepFiles >= 0,
     detail: `${config.logMaxBytes} bytes, keep ${config.logKeepFiles}; default ${DEFAULT_LOG_MAX_BYTES} bytes, keep ${DEFAULT_LOG_KEEP_FILES}`,
+  },
+  debugLogs: {
+    ok: typeof config.debugLogs === "boolean",
+    detail: `${config.debugLogs ? "on" : "off"}, default ${DEFAULT_DEBUG_LOGS ? "on" : "off"}`,
+  },
+  templates: {
+    ok: typeof config.titleTemplate === "string" && typeof config.despTemplate === "string",
+    detail: `title ${JSON.stringify(config.titleTemplate || DEFAULT_TITLE_TEMPLATE)}, desp ${JSON.stringify(config.despTemplate || DEFAULT_DESP_TEMPLATE)}`,
+  },
+  projectConfig: {
+    ok: true,
+    detail: config.projectConfigPath || "none",
   },
   notifierLog: logStatus(),
 };
