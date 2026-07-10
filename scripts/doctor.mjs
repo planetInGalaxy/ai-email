@@ -23,6 +23,10 @@ import {
   takeChars,
 } from "../plugins/agentping/scripts/pushdeer-lib.mjs";
 import { chooseSummaryModel, codexConfigPath } from "./model-utils.mjs";
+import {
+  notifyCommandForScript,
+  notifyConfigStatus,
+} from "./notify-config.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const projectRoot = path.resolve(path.dirname(__filename), "..");
@@ -33,8 +37,22 @@ const notifyScript = path.join(
   "scripts",
   "pushdeer-notify-event.mjs",
 );
+const legacyNotifyScript = path.join(
+  projectRoot,
+  "plugins",
+  "codex-pushdeer-notifier",
+  "scripts",
+  "pushdeer-notify-event.mjs",
+);
+const legacyNotifyMultiplexer = path.join(os.homedir(), ".codex", "notify-multiplexer.mjs");
 const marketplaceName = "agentping";
 const pluginId = "agentping@agentping";
+const legacyPathFragments = [
+  legacyNotifyScript,
+  "/plugins/codex-pushdeer-notifier/scripts/pushdeer-notify-event.mjs",
+  legacyNotifyMultiplexer,
+  "/.codex/notify-multiplexer.mjs",
+];
 
 function parseArgs(argv = process.argv.slice(2)) {
   return {
@@ -82,15 +100,12 @@ function notifyStatus() {
     return { ok: false, detail: `${configFile} does not exist` };
   }
   const contents = fs.readFileSync(configFile, "utf8");
-  const expected = `notify = ${JSON.stringify(["node", notifyScript])}`;
-  if (contents.split(/\r?\n/).some((line) => line.trim() === expected)) {
-    return { ok: true, detail: "notify points at this checkout" };
-  }
-  const existing = contents.match(/^\s*notify\s*=.*$/m)?.[0]?.trim() || "";
-  return {
-    ok: false,
-    detail: existing ? `different notify configured: ${existing}` : "top-level notify is not configured",
-  };
+  return notifyConfigStatus(contents, {
+    desiredCommand: notifyCommandForScript(notifyScript),
+    notifyScript,
+    legacyCommands: [notifyCommandForScript(legacyNotifyScript)],
+    legacyPathFragments,
+  });
 }
 
 function marketplaceStatus() {

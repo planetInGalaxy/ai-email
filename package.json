@@ -32,7 +32,7 @@
     "package.json"
   ],
   "scripts": {
-    "check": "node --check plugins/agentping/scripts/pushdeer-lib.mjs && node --check plugins/agentping/scripts/pushdeer-notify.mjs && node --check plugins/agentping/scripts/pushdeer-notify-event.mjs && node --check plugins/agentping/scripts/pushdeer-stop-hook.mjs && node --check plugins/agentping/scripts/setup-pushdeer-key.mjs && node --check scripts/install.mjs && node --check scripts/uninstall.mjs && node --check scripts/doctor.mjs && node --check scripts/check-models.mjs && node --check scripts/model-utils.mjs && node --check scripts/config.mjs && node --check scripts/logs.mjs && node --check scripts/test-notifier.mjs && node --check bin/agentping.mjs && node --check bin/codex-pushdeer.mjs",
+    "check": "node --check plugins/agentping/scripts/pushdeer-lib.mjs && node --check plugins/agentping/scripts/pushdeer-notify.mjs && node --check plugins/agentping/scripts/pushdeer-notify-event.mjs && node --check plugins/agentping/scripts/pushdeer-stop-hook.mjs && node --check plugins/agentping/scripts/setup-pushdeer-key.mjs && node --check scripts/install.mjs && node --check scripts/uninstall.mjs && node --check scripts/doctor.mjs && node --check scripts/check-models.mjs && node --check scripts/model-utils.mjs && node --check scripts/notify-config.mjs && node --check scripts/config.mjs && node --check scripts/logs.mjs && node --check scripts/test-notifier.mjs && node --check bin/agentping.mjs && node --check bin/codex-pushdeer.mjs",
     "install:local": "node scripts/install-local.mjs",
     "setup": "node scripts/install.mjs",
     "uninstall:notifier": "node scripts/uninstall.mjs",

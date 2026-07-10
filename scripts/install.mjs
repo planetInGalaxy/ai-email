@@ -31,6 +31,10 @@ import {
   saveConfigPatch,
 } from "../plugins/agentping/scripts/pushdeer-lib.mjs";
 import { chooseSummaryModel } from "./model-utils.mjs";
+import {
+  notifyCommandForScript,
+  replaceTopLevelNotify,
+} from "./notify-config.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const projectRoot = path.resolve(path.dirname(__filename), "..");
@@ -43,11 +47,18 @@ const legacyNotifyScript = path.join(
   "scripts",
   "pushdeer-notify-event.mjs",
 );
+const legacyNotifyMultiplexer = path.join(codexHome(), "notify-multiplexer.mjs");
 const setupScript = path.join(pluginRoot, "scripts", "setup-pushdeer-key.mjs");
 const marketplaceName = "agentping";
 const pluginName = "agentping";
 const legacyPluginName = "codex-pushdeer-notifier";
 const legacyMarketplaceNames = ["codex-pushdeer", "aimp-local"];
+const legacyPathFragments = [
+  legacyNotifyScript,
+  "/plugins/codex-pushdeer-notifier/scripts/pushdeer-notify-event.mjs",
+  legacyNotifyMultiplexer,
+  "/.codex/notify-multiplexer.mjs",
+];
 
 function parseArgs(argv = process.argv.slice(2)) {
   const args = { _: [] };
@@ -84,7 +95,7 @@ function codexConfigPath() {
   return path.join(codexHome(), "config.toml");
 }
 
-function run(command, commandArgs, { allowFailure = false } = {}) {
+function run(command, commandArgs, { allowFailure = false, stdio = "pipe" } = {}) {
   if (args["dry-run"]) {
     console.log(`[dry-run] ${[command, ...commandArgs].join(" ")}`);
     return { status: 0, stdout: "", stderr: "" };
@@ -92,8 +103,8 @@ function run(command, commandArgs, { allowFailure = false } = {}) {
 
   const result = spawnSync(command, commandArgs, {
     cwd: projectRoot,
-    stdio: "pipe",
-    encoding: "utf8",
+    stdio,
+    encoding: stdio === "pipe" ? "utf8" : undefined,
   });
 
   if (result.status !== 0 && !allowFailure) {
@@ -128,56 +139,6 @@ async function confirm(question) {
   }
 }
 
-function desiredNotifyLine() {
-  return `notify = ${JSON.stringify(["node", notifyScript])}`;
-}
-
-function legacyNotifyLine() {
-  return `notify = ${JSON.stringify(["node", legacyNotifyScript])}`;
-}
-
-function replaceTopLevelNotify(contents, replacementLine, force) {
-  const lines = contents.split(/\r?\n/);
-  let firstTableIndex = lines.findIndex((line) => /^\s*\[/.test(line));
-  if (firstTableIndex === -1) firstTableIndex = lines.length;
-
-  for (let i = 0; i < firstTableIndex; i += 1) {
-    const line = lines[i];
-    if (!/^\s*notify\s*=/.test(line)) continue;
-    if (line.trim() === replacementLine) {
-      return { contents, changed: false, reason: "notify already configured" };
-    }
-    if (line.trim() === legacyNotifyLine()) {
-      lines[i] = replacementLine;
-      return {
-        contents: lines.join("\n").replace(/\n*$/u, "\n"),
-        changed: true,
-        reason: "legacy notify replaced",
-      };
-    }
-    if (!force) {
-      return {
-        contents,
-        changed: false,
-        conflict: line.trim(),
-      };
-    }
-    lines[i] = replacementLine;
-    return {
-      contents: lines.join("\n").replace(/\n*$/u, "\n"),
-      changed: true,
-      reason: "notify replaced",
-    };
-  }
-
-  lines.splice(firstTableIndex, 0, replacementLine, "");
-  return {
-    contents: lines.join("\n").replace(/\n*$/u, "\n"),
-    changed: true,
-    reason: "notify inserted",
-  };
-}
-
 async function configureNotify() {
   if (args["skip-notify"]) {
     console.log("Skipped Codex notify configuration.");
@@ -187,17 +148,30 @@ async function configureNotify() {
   const configFile = codexConfigPath();
   const existing = fs.existsSync(configFile) ? fs.readFileSync(configFile, "utf8") : "";
   let force = Boolean(args["force-notify"]);
-  let result = replaceTopLevelNotify(existing, desiredNotifyLine(), force);
+  let result = replaceTopLevelNotify(existing, {
+    desiredCommand: notifyCommandForScript(notifyScript),
+    legacyCommands: [notifyCommandForScript(legacyNotifyScript)],
+    legacyPathFragments,
+    force,
+  });
 
   if (result.conflict) {
     console.log(`Existing top-level notify found: ${result.conflict}`);
+    if (result.previousNotify) {
+      console.log(`Existing wrapped previous notify found: ${result.previousNotify}`);
+    }
     const ok = await confirm("Replace it with the AgentPing notifier?");
     if (!ok) {
       console.error("Refusing to overwrite existing notify. Re-run with --force-notify to replace it.");
       process.exit(2);
     }
     force = true;
-    result = replaceTopLevelNotify(existing, desiredNotifyLine(), force);
+    result = replaceTopLevelNotify(existing, {
+      desiredCommand: notifyCommandForScript(notifyScript),
+      legacyCommands: [notifyCommandForScript(legacyNotifyScript)],
+      legacyPathFragments,
+      force,
+    });
   }
 
   if (!result.changed) {
@@ -264,7 +238,7 @@ function configurePushDeerKey() {
   if (args.test) setupArgs.push("--test");
   if (args["dry-run"]) setupArgs.push("--dry-run");
 
-  run(process.execPath, setupArgs);
+  run(process.execPath, setupArgs, { stdio: "inherit" });
 }
 
 function migrateLegacyConfig() {

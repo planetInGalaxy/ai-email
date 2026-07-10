@@ -16,6 +16,12 @@ import {
   normalizeNotifyMode,
   normalizeSummaryCharBounds,
 } from "../plugins/agentping/scripts/pushdeer-lib.mjs";
+import {
+  notifyCommandForScript,
+  notifyConfigStatus,
+  notifyLineForCommand,
+  replaceTopLevelNotify,
+} from "./notify-config.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const projectRoot = path.resolve(path.dirname(__filename), "..");
@@ -361,6 +367,62 @@ function testLegacyEnvCompatibility() {
   }
 }
 
+function testNotifyConfigHelpers() {
+  const agentScript = path.join(projectRoot, "plugins", "agentping", "scripts", "pushdeer-notify-event.mjs");
+  const legacyScript = path.join(projectRoot, "plugins", "codex-pushdeer-notifier", "scripts", "pushdeer-notify-event.mjs");
+  const desiredCommand = notifyCommandForScript(agentScript);
+  const legacyCommand = notifyCommandForScript(legacyScript);
+  const legacyPathFragments = [
+    legacyScript,
+    "/plugins/codex-pushdeer-notifier/scripts/pushdeer-notify-event.mjs",
+    "/.codex/notify-multiplexer.mjs",
+  ];
+
+  const direct = [
+    "# config",
+    notifyLineForCommand(legacyCommand),
+    "",
+    "[projects.\"/tmp/work\"]",
+  ].join("\n");
+  const directResult = replaceTopLevelNotify(direct, {
+    desiredCommand,
+    legacyCommands: [legacyCommand],
+    legacyPathFragments,
+  });
+  assert.equal(directResult.reason, "legacy notify replaced");
+  assert.match(directResult.contents, new RegExp(agentScript.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "u"));
+
+  const wrapperCommand = [
+    "/Applications/ChatGPT.app/Contents/Resources/Codex Computer Use.app/Contents/MacOS/SkyComputerUseClient",
+    "turn-ended",
+    "--previous-notify",
+    JSON.stringify(["node", "/Users/example/.codex/notify-multiplexer.mjs"]),
+  ];
+  const wrapped = [
+    "# config",
+    notifyLineForCommand(wrapperCommand),
+    "",
+    "[projects.\"/tmp/work\"]",
+  ].join("\n");
+  const wrappedResult = replaceTopLevelNotify(wrapped, {
+    desiredCommand,
+    legacyCommands: [legacyCommand],
+    legacyPathFragments,
+  });
+  assert.equal(wrappedResult.reason, "legacy wrapped notify replaced");
+  assert.match(wrappedResult.contents, /--previous-notify/u);
+  assert.match(wrappedResult.contents, new RegExp(agentScript.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "u"));
+
+  const status = notifyConfigStatus(wrappedResult.contents, {
+    desiredCommand,
+    notifyScript: agentScript,
+    legacyCommands: [legacyCommand],
+    legacyPathFragments,
+  });
+  assert.equal(status.ok, true);
+  assert.equal(status.detail, "notify wrapper delegates to this checkout");
+}
+
 function testPushReal() {
   const result = spawnSync(
     process.execPath,
@@ -382,6 +444,7 @@ const tests = {
   summary: () => test("LLM summary is used whole", testLlmSummaryIsUsedWhole),
   logs: () => test("log rotation", testLogRotation),
   legacy: () => test("legacy env compatibility", testLegacyEnvCompatibility),
+  notify: () => test("notify config helpers", testNotifyConfigHelpers),
   push: () => test(flags.has("--real") ? "real PushDeer push" : "dry-run PushDeer push", flags.has("--real") ? testPushReal : testPushDryRun),
 };
 
@@ -391,11 +454,12 @@ if (command === "all") {
   tests.summary();
   tests.logs();
   tests.legacy();
+  tests.notify();
   tests.push();
 } else if (tests[command]) {
   tests[command]();
 } else {
-  console.error("Usage: agentping test [all|format|final|summary|logs|legacy|push] [--real]");
+  console.error("Usage: agentping test [all|format|final|summary|logs|legacy|notify|push] [--real]");
   process.exit(2);
 }
 

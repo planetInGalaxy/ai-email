@@ -109,6 +109,8 @@ The old `codex-pushdeer` command remains as a compatibility alias, but new docs 
 
 Codex supports a user-level `notify` command in `~/.codex/config.toml`. If the installer detects an existing top-level `notify`, it will ask before replacing it.
 
+Codex Desktop integrations can wrap an existing notifier with `--previous-notify`, for example when Computer Use owns the top-level `notify` command. In that case, the installer preserves the wrapper and updates the wrapped previous notifier to AgentPing when it points at the old Codex PushDeer notifier or the legacy local multiplexer. `agentping doctor` treats this wrapper chain as a valid AgentPing setup.
+
 For non-interactive installs that should replace the existing notifier:
 
 ```bash
