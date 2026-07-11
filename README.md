@@ -15,7 +15,7 @@ AgentPing uses Codex `notify` with the `agent-turn-complete` event. It does not 
 - Sends a separator plus the original assistant answer in PushDeer `desp`, truncated to `despMaxChars`.
 - Asks the summary model for 50 to 100 Chinese characters by default.
 - Does not hard-truncate LLM summaries; semantic completeness is preferred if the model slightly exceeds the configured range.
-- Keeps the default `desp` at or below 300 characters.
+- Keeps approximately the first 200 and last 150 characters of the answer at punctuation boundaries, without a total `desp` limit by default.
 - Supports notification modes: always, long tasks only, errors only, or off.
 - Supports notification templates for PushDeer `text` and `desp`.
 - Supports project-level `.agentping.json` config, without project-stored PushDeer keys.
@@ -37,7 +37,7 @@ AgentPing uses Codex `notify` with the `agent-turn-complete` event. It does not 
 The installer detects available Codex models with `codex debug models` and stores the selected summary model in local config. If you want to force a model, pass it during install:
 
 ```bash
-node scripts/install.mjs --summary-model gpt-5.6-terra
+node scripts/install.mjs --summary-model gpt-5.4-mini
 ```
 
 ## Install
@@ -79,10 +79,10 @@ node scripts/install.mjs --dry-run --skip-key
 Useful install flags:
 
 ```bash
-node scripts/install.mjs --summary-model gpt-5.6-terra
-node scripts/install.mjs --summary-min-chars 30 --summary-max-chars 60
+node scripts/install.mjs --summary-model gpt-5.4-mini
+node scripts/install.mjs --summary-min-chars 50 --summary-max-chars 100
 node scripts/install.mjs --llm-timeout-ms 15000
-node scripts/install.mjs --desp-max-chars 300
+node scripts/install.mjs --desp-max-chars -1
 node scripts/install.mjs --desp-separator "\n-----\n"
 node scripts/install.mjs --final-wait-ms 8000
 node scripts/install.mjs --notify-mode always
@@ -156,22 +156,22 @@ The notifier config stores local runtime settings:
 {
   "pushkey": "PDU...",
   "endpoint": "https://api2.pushdeer.com/message/push",
-  "summaryModel": "gpt-5.6-terra",
+  "summaryModel": "gpt-5.4-mini",
   "summaryMinChars": 50,
   "summaryMaxChars": 100,
   "llmTimeoutMs": 16000,
-  "despMaxChars": 300,
-  "despSeparator": "\n-----\n",
+  "despMaxChars": -1,
+  "despSeparator": "\n\n---\n\n",
   "finalWaitMs": 8000,
-  "notifyMode": "always",
-  "minDurationMs": 30000,
+  "notifyMode": "long_only",
+  "minDurationMs": 10000,
   "logMaxBytes": 2097152,
   "logKeepFiles": 3,
   "debugLogs": false,
   "titleTemplate": "{summary}",
-  "despTemplate": "{separator}{finalText}",
-  "finalTextPreviewHeadChars": 150,
-  "finalTextPreviewTailChars": 50,
+  "despTemplate": "用时：{durationZh}{separator}{finalTextPreview}",
+  "finalTextPreviewHeadChars": 200,
+  "finalTextPreviewTailChars": 150,
   "finalTextPreviewMarker": "\n......\n"
 }
 ```
@@ -187,22 +187,22 @@ Create a documented project config in the current project with `agentping config
 Optional environment variables:
 
 ```bash
-export AGENTPING_SUMMARY_MODEL=gpt-5.6-terra
+export AGENTPING_SUMMARY_MODEL=gpt-5.4-mini
 export AGENTPING_SUMMARY_MIN_CHARS=50
 export AGENTPING_SUMMARY_MAX_CHARS=100
 export AGENTPING_LLM_TIMEOUT_MS=16000
-export AGENTPING_DESP_MAX_CHARS=300
-export AGENTPING_DESP_SEPARATOR='\n-----\n'
+export AGENTPING_DESP_MAX_CHARS=-1
+export AGENTPING_DESP_SEPARATOR='\n\n---\n\n'
 export AGENTPING_FINAL_WAIT_MS=8000
-export AGENTPING_NOTIFY_MODE=always
-export AGENTPING_MIN_DURATION_MS=30000
+export AGENTPING_NOTIFY_MODE=long_only
+export AGENTPING_MIN_DURATION_MS=10000
 export AGENTPING_LOG_MAX_BYTES=2097152
 export AGENTPING_LOG_KEEP_FILES=3
 export AGENTPING_DEBUG_LOGS=0
 export AGENTPING_TITLE_TEMPLATE='{summary}'
-export AGENTPING_DESP_TEMPLATE='{separator}{finalText}'
-export AGENTPING_FINAL_TEXT_PREVIEW_HEAD_CHARS=150
-export AGENTPING_FINAL_TEXT_PREVIEW_TAIL_CHARS=50
+export AGENTPING_DESP_TEMPLATE='用时：{durationZh}{separator}{finalTextPreview}'
+export AGENTPING_FINAL_TEXT_PREVIEW_HEAD_CHARS=200
+export AGENTPING_FINAL_TEXT_PREVIEW_TAIL_CHARS=150
 export AGENTPING_FINAL_TEXT_PREVIEW_MARKER='\n......\n'
 export AGENTPING_PUSHDEER_ENDPOINT=https://api2.pushdeer.com/message/push
 export AGENTPING_PUSHDEER_KEY='PDU...'
@@ -212,10 +212,10 @@ export AGENTPING_PUSHDEER_KEY='PDU...'
 `AGENTPING_SUMMARY_MODEL`, `AGENTPING_SUMMARY_MIN_CHARS`, `AGENTPING_SUMMARY_MAX_CHARS`, and `AGENTPING_LLM_TIMEOUT_MS` override the stored summary settings.
 Summary length is prompt-guided, not enforced by hard truncation. If the model returns a slightly longer complete sentence, the notifier sends it as-is.
 The summary model receives the full user prompt and full final answer so the generated notification title is based on complete context.
-`AGENTPING_DESP_MAX_CHARS` overrides the stored `desp` truncation limit. The default is 300 characters; positive values are capped to 1000. Set it to `-1` to keep the complete rendered `desp`, or `0` to omit `desp`.
+`AGENTPING_DESP_MAX_CHARS` overrides the stored `desp` truncation limit. The default is `-1`, which keeps the complete rendered `desp`; positive values are capped to 1000, and `0` omits `desp`.
 `AGENTPING_DESP_SEPARATOR` overrides the marker placed before the original answer in `desp`; escaped `\n` sequences are converted to newlines. Set it to an empty string to omit the marker.
 `AGENTPING_FINAL_WAIT_MS` controls how long a notify event waits for the Codex session file to show `task_complete`. Intermediate events are skipped if no completed final answer appears within that window.
-`AGENTPING_NOTIFY_MODE` controls whether automatic notifications send. Valid values are `always`, `long_only`, `errors_only`, and `off`. The default is `always`.
+`AGENTPING_NOTIFY_MODE` controls whether automatic notifications send. Valid values are `always`, `long_only`, `errors_only`, and `off`. The default is `long_only`.
 `AGENTPING_MIN_DURATION_MS` is used by `long_only`; turns shorter than this threshold are skipped.
 `AGENTPING_LOG_MAX_BYTES` and `AGENTPING_LOG_KEEP_FILES` control local log rotation. Set `AGENTPING_LOG_MAX_BYTES=0` to disable rotation.
 `AGENTPING_DEBUG_LOGS=1` allows local logs to include redacted title/desp/stderr previews. By default logs keep operational metadata such as lengths, status, summary source, elapsed time, and errors.
@@ -235,9 +235,9 @@ npm run config:show
 agentping config show
 agentping config set-summary-range 50 100
 agentping config set-timeout 15000
-agentping config set-desp-max 300
-agentping config set-separator "\n-----\n"
-agentping config set-mode always
+agentping config set-desp-max -1
+agentping config set-separator "\n\n---\n\n"
+agentping config set-mode long_only --min-duration-ms 10000
 agentping config set-mode long_only --min-duration-ms 30000
 agentping config set-mode off
 agentping config set-debug-logs off
