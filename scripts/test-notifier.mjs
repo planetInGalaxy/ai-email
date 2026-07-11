@@ -10,6 +10,8 @@ import {
   DEFAULT_DESP_SEPARATOR,
   DEFAULT_TITLE_TEMPLATE,
   charLength,
+  codexSummaryExecArgs,
+  codexTransportDiagnostics,
   fallbackDescription,
   formatFinalTextPreview,
   formatNotificationFields,
@@ -240,6 +242,18 @@ function testFormatHelpers() {
   assert.equal(preview.slice(0, 10), "0123456789");
   assert.match(preview, /\n\.\.\.\.\.\.\n/u);
   assert.equal(preview.slice(-10), "0123456789");
+
+  const execArgs = codexSummaryExecArgs({
+    model: "gpt-5.4-mini",
+    outputFile: "/tmp/summary.txt",
+    prompt: "测试摘要",
+  });
+  assert.ok(execArgs.includes("model_provider=\"agentping-openai\""));
+  assert.ok(execArgs.includes("model_providers.agentping-openai.supports_websockets=false"));
+  assert.deepEqual(
+    codexTransportDiagnostics("stream disconnected - retrying\nfalling back to HTTP", { timedOut: true }),
+    { transport: "https", transportRetries: 1, timeoutStage: "transport_retry" },
+  );
 }
 
 function testFinalOnlyNotification() {
@@ -277,6 +291,8 @@ function makeStubCodex(workspace, summary) {
   const source = [
     "#!/usr/bin/env node",
     "const fs = require('node:fs');",
+    "const input = fs.readFileSync(0, 'utf8');",
+    "if (process.env.STUB_CODEX_CAPTURE) fs.writeFileSync(process.env.STUB_CODEX_CAPTURE, JSON.stringify({ args: process.argv.slice(2), input }));",
     "const outputIndex = process.argv.indexOf('--output-last-message');",
     "if (outputIndex >= 0) fs.writeFileSync(process.argv[outputIndex + 1], process.env.STUB_CODEX_SUMMARY || '');",
   ].join("\n");
@@ -284,6 +300,7 @@ function makeStubCodex(workspace, summary) {
   return {
     PATH: `${binDir}${path.delimiter}${process.env.PATH || ""}`,
     STUB_CODEX_SUMMARY: summary,
+    STUB_CODEX_CAPTURE: path.join(workspace.root, "codex-capture.json"),
   };
 }
 
@@ -306,9 +323,15 @@ function testLlmSummaryIsUsedWhole() {
       AGENTPING_DEBUG_LOGS: "1",
     });
     const log = readLog(workspace);
+    const capture = JSON.parse(fs.readFileSync(stubEnv.STUB_CODEX_CAPTURE, "utf8"));
     assert.match(log, /PushDeer notify event sent/u);
     assert.match(log, new RegExp(summary.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "u"));
     assert.match(log, /summaryElapsedMs/u);
+    assert.ok(capture.args.includes("model_provider=\"agentping-openai\""));
+    assert.ok(capture.args.includes("model_providers.agentping-openai.supports_websockets=false"));
+    assert.match(capture.input, /这是一个很长的最终回答。它包含结论、代码修改、验证结果和后续建议，不能只截取开头。/u);
+    assert.match(log, /LLM summary generated/u);
+    assert.match(log, /"transport":"unknown"/u);
   } finally {
     cleanupTempWorkspace(workspace);
   }

@@ -5,6 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import {
   charLength,
+  codexSummaryExecArgs,
+  codexTransportDiagnostics,
   DEFAULT_LLM_TIMEOUT_MS,
   DEFAULT_SUMMARY_MODEL,
   extractTurnId,
@@ -100,23 +102,7 @@ function summarizeWithCodex({ finalText, notification }) {
   try {
     const result = spawnSync(
       "codex",
-      [
-        "exec",
-        "--ignore-user-config",
-        "--skip-git-repo-check",
-        "--sandbox",
-        "read-only",
-        "--disable",
-        "hooks",
-        "--disable",
-        "plugins",
-        "--ephemeral",
-        "-m",
-        model,
-        "--output-last-message",
-        outputFile,
-        prompt,
-      ],
+      codexSummaryExecArgs({ model, outputFile, prompt }),
       {
         cwd: process.cwd(),
         input,
@@ -132,6 +118,9 @@ function summarizeWithCodex({ finalText, notification }) {
       },
     );
     const elapsedMs = Date.now() - startedAt;
+    const diagnostics = codexTransportDiagnostics(result.stderr, {
+      timedOut: result.signal === "SIGTERM",
+    });
 
     if (result.status !== 0) {
       logEvent("warn", "LLM summary command failed", {
@@ -139,6 +128,8 @@ function summarizeWithCodex({ finalText, notification }) {
         status: result.status,
         signal: result.signal,
         elapsedMs,
+        inputChars: charLength(input),
+        ...diagnostics,
         ...logTextMeta("stderr", result.stderr, { config, maxChars: 1000 }),
       });
       return {
@@ -157,6 +148,13 @@ function summarizeWithCodex({ finalText, notification }) {
       };
     }
     const summaryChars = charLength(summary);
+    logEvent("info", "LLM summary generated", {
+      model,
+      elapsedMs,
+      inputChars: charLength(input),
+      summaryChars,
+      ...diagnostics,
+    });
     if (summaryChars < summaryMinChars || summaryChars > summaryMaxChars) {
       logEvent("info", "LLM summary outside configured length range", {
         model,

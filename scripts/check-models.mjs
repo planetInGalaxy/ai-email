@@ -6,6 +6,9 @@ import path from "node:path";
 import {
   DEFAULT_LLM_TIMEOUT_MS,
   DEFAULT_SUMMARY_MODEL,
+  charLength,
+  codexSummaryExecArgs,
+  codexTransportDiagnostics,
   configPath,
   loadConfig,
   saveConfigPatch,
@@ -92,23 +95,7 @@ function runOneBenchmark(model, timeout) {
   try {
     const result = spawnSync(
       "codex",
-      [
-        "exec",
-        "--ignore-user-config",
-        "--skip-git-repo-check",
-        "--sandbox",
-        "read-only",
-        "--disable",
-        "hooks",
-        "--disable",
-        "plugins",
-        "--ephemeral",
-        "-m",
-        model,
-        "--output-last-message",
-        outputFile,
-        prompt,
-      ],
+      codexSummaryExecArgs({ model, outputFile, prompt }),
       {
         input,
         encoding: "utf8",
@@ -136,6 +123,10 @@ function runOneBenchmark(model, timeout) {
       status: result.status,
       signal: result.signal || "",
       outputChars: Array.from(outputText).length,
+      inputChars: charLength(input),
+      ...codexTransportDiagnostics(result.stderr, {
+        timedOut: result.signal === "SIGTERM",
+      }),
       error: result.status === 0 && outputText
         ? ""
         : (result.signal || (result.stderr || result.stdout || "empty output").trim()).slice(0, 300),
@@ -224,10 +215,18 @@ if (args.json) {
   if (output.benchmark.length) {
     console.log("Benchmark:");
     for (const item of output.benchmark) {
+      const transports = unique(item.attempts.map((attempt) => attempt.transport)).join("/");
+      const retries = item.attempts.reduce((sum, attempt) => sum + attempt.transportRetries, 0);
+      const timeoutStages = unique(item.attempts.map((attempt) => attempt.timeoutStage)).join("/");
       const status = item.ok
         ? `${item.successes}/${item.runs} ok, avg ${item.avgMs}ms, min ${item.minMs}ms, max ${item.maxMs}ms`
         : `0/${item.runs} ok`;
-      console.log(`  ${item.model}: ${status}`);
+      const diagnostics = [
+        transports ? `transport ${transports}` : "",
+        `retries ${retries}`,
+        timeoutStages ? `timeout stage ${timeoutStages}` : "",
+      ].filter(Boolean).join(", ");
+      console.log(`  ${item.model}: ${status}; ${diagnostics}`);
     }
     if (output.fastestSummaryModel) console.log(`Fastest summary model: ${output.fastestSummaryModel}`);
   }

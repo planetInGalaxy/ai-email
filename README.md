@@ -312,6 +312,8 @@ node scripts/uninstall.mjs --remove-marketplace
 
 Each automatic notification summarizes the latest user prompt and assistant answer by launching a temporary `codex exec` process. The summary text is then sent to PushDeer.
 
+Summary subprocesses reuse the normal Codex login but use an HTTPS-only provider profile. This avoids waiting through WebSocket retries on networks where WebSocket streaming is unavailable, while keeping the same OpenAI Codex endpoint and selected model.
+
 The notifier redacts common PushDeer keys, OpenAI-style keys, bearer tokens, long URLs, and query token parameters before summarization and logging. This is a best-effort filter, not a complete data-loss-prevention system.
 
 Local logs do not include full notification text, raw final answers, or summary command stderr unless `debugLogs`/`AGENTPING_DEBUG_LOGS=1` is enabled.
@@ -362,4 +364,4 @@ Common failures:
 - Old Codex task does not notify after install: run `node scripts/install.mjs --install-legacy-shim`, then finish the old task again. This only helps tasks that call `~/.codex/notify-multiplexer.mjs` at completion.
 - Notification arrives for tasks you do not care about: use `agentping config set-mode long_only --min-duration-ms 30000` or `agentping config set-mode off`.
 - Log file is too large: run `agentping logs rotate`, `agentping logs clear`, or reduce `logMaxBytes`.
-- Need to debug summary timeouts: run `agentping check-models --benchmark --runs 3` and set the fastest stable model with `agentping check-models --benchmark --write-fastest`.
+- Need to debug summary timeouts: run `agentping check-models --benchmark --runs 3`. Benchmark attempts report transport, retry count, and timeout stage using the same HTTPS-only path as real notifications.

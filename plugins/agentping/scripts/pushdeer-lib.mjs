@@ -24,6 +24,8 @@ export const DEFAULT_DESP_TEMPLATE = "{separator}{finalText}";
 export const DEFAULT_FINAL_TEXT_PREVIEW_HEAD_CHARS = 150;
 export const DEFAULT_FINAL_TEXT_PREVIEW_TAIL_CHARS = 50;
 export const DEFAULT_FINAL_TEXT_PREVIEW_MARKER = "\n......\n";
+export const CODEX_SUMMARY_PROVIDER = "agentping-openai";
+export const CODEX_SUMMARY_BASE_URL = "https://chatgpt.com/backend-api/codex";
 export const NOTIFY_MODES = ["always", "long_only", "errors_only", "off"];
 export const PROJECT_CONFIG_FILES = [".agentping.json", "agentping.config.json"];
 
@@ -40,6 +42,41 @@ export function envValue(...names) {
     if (value !== undefined && value !== "") return value;
   }
   return undefined;
+}
+
+export function codexSummaryExecArgs({ model, outputFile, prompt }) {
+  return [
+    "exec",
+    "--ignore-user-config",
+    "-c", `model_provider="${CODEX_SUMMARY_PROVIDER}"`,
+    "-c", `model_providers.${CODEX_SUMMARY_PROVIDER}.name="OpenAI"`,
+    "-c", `model_providers.${CODEX_SUMMARY_PROVIDER}.base_url="${CODEX_SUMMARY_BASE_URL}"`,
+    "-c", `model_providers.${CODEX_SUMMARY_PROVIDER}.wire_api="responses"`,
+    "-c", `model_providers.${CODEX_SUMMARY_PROVIDER}.requires_openai_auth=true`,
+    "-c", `model_providers.${CODEX_SUMMARY_PROVIDER}.supports_websockets=false`,
+    "--skip-git-repo-check",
+    "--sandbox", "read-only",
+    "--disable", "hooks",
+    "--disable", "plugins",
+    "--ephemeral",
+    "-m", model,
+    "--output-last-message", outputFile,
+    prompt,
+  ];
+}
+
+export function codexTransportDiagnostics(stderr, { timedOut = false } = {}) {
+  const text = String(stderr || "");
+  const retryMatches = text.match(/stream disconnected - retrying/gu) || [];
+  const usedHttp = text.includes("falling back to HTTP") || text.includes("HTTPS transport");
+  const providerMatch = text.match(/^provider:\s*(.+)$/mu);
+  return {
+    transport: usedHttp || providerMatch?.[1]?.trim() === CODEX_SUMMARY_PROVIDER ? "https" : "unknown",
+    transportRetries: retryMatches.length,
+    timeoutStage: timedOut
+      ? (retryMatches.length > 0 ? "transport_retry" : "response_wait")
+      : "",
+  };
 }
 
 function defaultConfigPath(appName) {
