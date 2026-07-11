@@ -10,6 +10,7 @@ export const DEFAULT_SUMMARY_MODEL = "gpt-5.4-mini";
 export const DEFAULT_CLAUDE_SUMMARY_MODEL = "haiku";
 export const DEFAULT_SUMMARY_MIN_CHARS = 50;
 export const DEFAULT_SUMMARY_MAX_CHARS = 100;
+export const DEFAULT_SUMMARY_FALLBACK_TEXT = "摘要未生成，请看原回答";
 export const DEFAULT_LLM_TIMEOUT_MS = 16_000;
 export const DEFAULT_DESP_MAX_CHARS = -1;
 export const MAX_DESP_MAX_CHARS = 1000;
@@ -38,6 +39,7 @@ const DEFAULT_STORED_CONFIG = {
   ClaudeSummaryModel: DEFAULT_CLAUDE_SUMMARY_MODEL,
   summaryMinChars: DEFAULT_SUMMARY_MIN_CHARS,
   summaryMaxChars: DEFAULT_SUMMARY_MAX_CHARS,
+  summaryFallbackText: DEFAULT_SUMMARY_FALLBACK_TEXT,
   llmTimeoutMs: DEFAULT_LLM_TIMEOUT_MS,
   despMaxChars: DEFAULT_DESP_MAX_CHARS,
   despSeparator: DEFAULT_DESP_SEPARATOR,
@@ -62,6 +64,7 @@ export const CONFIG_FIELD_COMMENTS = {
   ClaudeSummaryModel: "用于生成 Claude Code 通知摘要的模型。",
   summaryMinChars: "LLM 摘要期望的最少汉字数，会动态写入摘要 Prompt。",
   summaryMaxChars: "LLM 摘要期望的最多汉字数，会动态写入摘要 Prompt；为保证语句完整不会强制截断。",
+  summaryFallbackText: "LLM 摘要超时、失败、为空或明显无效时使用的固定标题。",
   llmTimeoutMs: "等待 LLM 生成摘要的最长毫秒数；超时后改用本地摘要。",
   despMaxChars: "PushDeer desp 正文的最大字符数，-1 表示不限制总长度，0 表示不发送 desp，正数最大允许 1000。",
   despSeparator: "摘要标题与原始回答正文之间使用的分隔符。",
@@ -383,6 +386,11 @@ export function loadConfig({ cwd = process.cwd() } = {}) {
       String(DEFAULT_SUMMARY_MAX_CHARS),
     10,
   );
+  const summaryFallbackText =
+    envValue("AGENTPING_SUMMARY_FALLBACK_TEXT", "CODEX_PUSHDEER_SUMMARY_FALLBACK_TEXT") ??
+    config.summaryFallbackText ??
+    config.summary_fallback_text ??
+    DEFAULT_SUMMARY_FALLBACK_TEXT;
   const llmTimeoutMs = Number.parseInt(
     envValue("AGENTPING_LLM_TIMEOUT_MS", "CODEX_PUSHDEER_LLM_TIMEOUT_MS") ||
       config.llmTimeoutMs ||
@@ -479,6 +487,7 @@ export function loadConfig({ cwd = process.cwd() } = {}) {
     summaryModel,
     claudeSummaryModel,
     ...summaryBounds,
+    summaryFallbackText: normalizeTemplate(summaryFallbackText, DEFAULT_SUMMARY_FALLBACK_TEXT),
     llmTimeoutMs: Number.isFinite(llmTimeoutMs) && llmTimeoutMs > 0
       ? llmTimeoutMs
       : DEFAULT_LLM_TIMEOUT_MS,

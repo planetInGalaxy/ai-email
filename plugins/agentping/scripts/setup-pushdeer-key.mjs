@@ -96,6 +96,7 @@ if (args.show) {
     ClaudeSummaryModel: config.claudeSummaryModel,
     summaryMinChars: config.summaryMinChars,
     summaryMaxChars: config.summaryMaxChars,
+    summaryFallbackText: config.summaryFallbackText,
     llmTimeoutMs: config.llmTimeoutMs,
     despMaxChars: config.despMaxChars,
     despSeparator: config.despSeparator,

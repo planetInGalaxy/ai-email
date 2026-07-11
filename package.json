@@ -1,6 +1,6 @@
 {
   "name": "agentping",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Notify when your AI agents finish and send concise completion summaries.",
   "private": false,
   "keywords": [

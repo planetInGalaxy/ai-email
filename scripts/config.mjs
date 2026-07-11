@@ -18,6 +18,7 @@ import {
   DEFAULT_NOTIFY_MODE,
   DEFAULT_DESP_TEMPLATE,
   DEFAULT_SUMMARY_MAX_CHARS,
+  DEFAULT_SUMMARY_FALLBACK_TEXT,
   DEFAULT_SUMMARY_MIN_CHARS,
   DEFAULT_SUMMARY_MODEL,
   DEFAULT_TITLE_TEMPLATE,
@@ -58,6 +59,7 @@ function usage() {
     "  set-key --stdin              Read PushDeer key from stdin",
     "  unset-key                    Remove stored PushDeer key",
     "  set-summary-range <min> <max> Configure LLM summary length",
+    "  set-summary-fallback <text>   Configure fixed title used when LLM summary is unavailable",
     "  set-timeout <ms>             Configure LLM summary timeout",
     "  set-desp-max <chars>         Configure desp length; -1 unlimited, 0 disables desp",
     "  set-separator <text>         Configure desp separator, supports \\n",
@@ -92,6 +94,7 @@ function showConfig() {
     ClaudeSummaryModel: config.claudeSummaryModel || DEFAULT_CLAUDE_SUMMARY_MODEL,
     summaryMinChars: config.summaryMinChars,
     summaryMaxChars: config.summaryMaxChars,
+    summaryFallbackText: config.summaryFallbackText,
     llmTimeoutMs: config.llmTimeoutMs,
     despMaxChars: config.despMaxChars,
     despSeparator: config.despSeparator,
@@ -171,6 +174,16 @@ function setSummaryRange() {
     summaryMinChars,
     summaryMaxChars,
   }, `Configured summary length ${summaryMinChars}-${summaryMaxChars} chars`);
+}
+
+function setSummaryFallback() {
+  const value = rawValue(1, "text", "value");
+  if (value === undefined) {
+    console.error("summary fallback text is required.");
+    process.exit(2);
+  }
+  const summaryFallbackText = normalizeTemplate(value, DEFAULT_SUMMARY_FALLBACK_TEXT);
+  savePatch({ summaryFallbackText }, `Configured summary fallback ${JSON.stringify(summaryFallbackText)}`);
 }
 
 function setTimeoutMs() {
@@ -286,6 +299,7 @@ function initProjectConfig() {
     ClaudeSummaryModel: DEFAULT_CLAUDE_SUMMARY_MODEL,
     summaryMinChars: DEFAULT_SUMMARY_MIN_CHARS,
     summaryMaxChars: DEFAULT_SUMMARY_MAX_CHARS,
+    summaryFallbackText: DEFAULT_SUMMARY_FALLBACK_TEXT,
     llmTimeoutMs: DEFAULT_LLM_TIMEOUT_MS,
     despMaxChars: DEFAULT_DESP_MAX_CHARS,
     despSeparator: DEFAULT_DESP_SEPARATOR,
@@ -308,6 +322,7 @@ function resetConfig() {
     ClaudeSummaryModel: DEFAULT_CLAUDE_SUMMARY_MODEL,
     summaryMinChars: DEFAULT_SUMMARY_MIN_CHARS,
     summaryMaxChars: DEFAULT_SUMMARY_MAX_CHARS,
+    summaryFallbackText: DEFAULT_SUMMARY_FALLBACK_TEXT,
     llmTimeoutMs: DEFAULT_LLM_TIMEOUT_MS,
     despMaxChars: DEFAULT_DESP_MAX_CHARS,
     despSeparator: DEFAULT_DESP_SEPARATOR,
@@ -345,6 +360,9 @@ switch (command) {
     break;
   case "set-summary-range":
     setSummaryRange();
+    break;
+  case "set-summary-fallback":
+    setSummaryFallback();
     break;
   case "set-timeout":
     setTimeoutMs();

@@ -16,6 +16,7 @@ import {
   DEFAULT_MIN_DURATION_MS,
   DEFAULT_NOTIFY_MODE,
   DEFAULT_SUMMARY_MAX_CHARS,
+  DEFAULT_SUMMARY_FALLBACK_TEXT,
   DEFAULT_SUMMARY_MIN_CHARS,
   DEFAULT_TITLE_TEMPLATE,
   MAX_DESP_MAX_CHARS,
@@ -243,6 +244,10 @@ const checks = {
   summaryLength: {
     ok: config.summaryMinChars >= 0 && config.summaryMaxChars >= config.summaryMinChars,
     detail: `${config.summaryMinChars}-${config.summaryMaxChars} chars, default ${DEFAULT_SUMMARY_MIN_CHARS}-${DEFAULT_SUMMARY_MAX_CHARS}`,
+  },
+  summaryFallbackText: {
+    ok: Boolean(config.summaryFallbackText),
+    detail: `${JSON.stringify(config.summaryFallbackText)}, default ${JSON.stringify(DEFAULT_SUMMARY_FALLBACK_TEXT)}`,
   },
   despMaxChars: {
     ok: config.despMaxChars >= -1 && config.despMaxChars <= MAX_DESP_MAX_CHARS,

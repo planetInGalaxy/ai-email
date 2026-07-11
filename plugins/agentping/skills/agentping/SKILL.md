@@ -99,7 +99,8 @@ AGENTPING_DRY_RUN=1 node plugins/agentping/scripts/pushdeer-notify.mjs \
 - Truncate automatic `desp` with `despMaxChars`; the default is `-1` for no total limit, positive values are capped to 1000, and `0` omits `desp`.
 - Use `despSeparator` to distinguish the summary from original content when PushDeer clients display `text` and `desp` together. The default is `\n\n---\n\n`.
 - Prompt automatic summaries toward the configured `summaryMinChars` to `summaryMaxChars` range; defaults are 50 to 100 Chinese characters.
-- Do not hard-truncate LLM summaries. If a generated summary exceeds the configured range, send it as-is so it remains understandable.
+- Do not hard-truncate valid LLM summaries. Accept modest overflow for sentence completeness, but reject excessively long output or an apparent copy of the final answer and use the configured `summaryFallbackText` instead.
+- Use `summaryFallbackText` for LLM timeout, command failure, empty output, or invalid output. The default is `摘要未生成，请看原回答`.
 - Notifier logs rotate according to `logMaxBytes` and `logKeepFiles`. Use `scripts/logs.mjs` instead of manually editing state files.
 - Self-tests must use temporary files and remove them after completion; do not add persistent test fixtures unless the user asks for them.
 - Prefer `scripts/doctor.mjs` before editing source when a user's machine behaves differently.

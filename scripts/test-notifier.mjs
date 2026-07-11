@@ -409,6 +409,7 @@ function testConfigFieldMigration() {
     assert.equal(stored.summaryMinChars__说明, undefined);
     assert.ok(Array.isArray(stored._说明));
     assert.equal(stored.llmTimeoutMs, 16_000);
+    assert.equal(stored.summaryFallbackText, "摘要未生成，请看原回答");
     assert.equal(stored.notifyMode, "long_only");
     assert.equal(stored.logMaxBytes, 2 * 1024 * 1024);
     assert.equal(stored.debugLogs, false);
@@ -480,7 +481,8 @@ function testLlmSummaryIsUsedWhole() {
   const workspace = makeTempWorkspace();
   try {
     const turnId = "turn-llm-summary";
-    const summary = "已完成完整回答摘要，保留关键结论和下一步动作，语义完整且未硬截断。";
+    const summary = "已完成完整回答摘要，保留关键结论、代码修改、验证结果、风险说明和下一步动作；虽然略微超过期望字数上限，但仍是一句完整且可读的摘要，因此应当原样发送而不是生硬截断，同时确保用户能直接理解任务是否成功、还存在哪些限制以及是否需要继续操作。";
+    assert.ok(charLength(summary) > 100 && charLength(summary) < 200);
     writeSession(workspace, {
       turnId,
       finalText: "这是一个很长的最终回答。它包含结论、代码修改、验证结果和后续建议，不能只截取开头。",
@@ -505,6 +507,42 @@ function testLlmSummaryIsUsedWhole() {
     assert.match(capture.input, /这是一个很长的最终回答。它包含结论、代码修改、验证结果和后续建议，不能只截取开头。/u);
     assert.match(log, /LLM summary generated/u);
     assert.match(log, /"transport":"unknown"/u);
+  } finally {
+    cleanupTempWorkspace(workspace);
+  }
+}
+
+function testInvalidLlmSummaryUsesFixedFallback() {
+  const workspace = makeTempWorkspace();
+  try {
+    const turnId = "turn-invalid-llm-summary";
+    const fallbackText = "本轮摘要暂不可用，请查看原回答";
+    const config = JSON.parse(fs.readFileSync(workspace.configPath, "utf8"));
+    fs.writeFileSync(workspace.configPath, JSON.stringify({
+      ...config,
+      summaryFallbackText: fallbackText,
+    }, null, 2));
+    writeSession(workspace, {
+      turnId,
+      finalText: "这是原始回答，只应出现在通知正文预览中，不应被模型完整复制到通知标题。",
+    });
+    const invalidSummary = `这是模型错误返回的完整长回答。${"异常长内容".repeat(150)}`;
+    const stubEnv = makeStubCodex(workspace, invalidSummary);
+    runEvent(workspace, {
+      type: "agent-turn-complete",
+      "turn-id": turnId,
+      "input-messages": [{ text: "请生成简短摘要" }],
+    }, {
+      ...stubEnv,
+      AGENTPING_DEBUG_LOGS: "1",
+    });
+
+    const log = readLog(workspace);
+    assert.match(log, /LLM summary rejected as invalid/u);
+    assert.match(log, /too_long_/u);
+    assert.match(log, new RegExp(fallbackText, "u"));
+    assert.match(log, /"summarySource":"fallback"/u);
+    assert.doesNotMatch(log, /这是模型错误返回的完整长回答/u);
   } finally {
     cleanupTempWorkspace(workspace);
   }
@@ -882,6 +920,7 @@ const tests = {
   config_migration: () => test("config field migration", testConfigFieldMigration),
   final: () => test("final-only notification", testFinalOnlyNotification),
   summary: () => test("LLM summary is used whole", testLlmSummaryIsUsedWhole),
+  summary_fallback: () => test("invalid LLM summary uses fixed fallback", testInvalidLlmSummaryUsesFixedFallback),
   logs: () => test("log rotation", testLogRotation),
   legacy: () => test("legacy env compatibility", testLegacyEnvCompatibility),
   project: () => test("project config overrides", testProjectConfigOverrides),
@@ -898,6 +937,7 @@ if (command === "all") {
   tests.config_migration();
   tests.final();
   tests.summary();
+  tests.summary_fallback();
   tests.logs();
   tests.legacy();
   tests.project();
@@ -909,7 +949,7 @@ if (command === "all") {
 } else if (tests[command]) {
   tests[command]();
 } else {
-  console.error("Usage: agentping test [all|format|config_migration|final|summary|logs|legacy|project|notify|claude_hooks|claude_stop|claude_modes|claude_live|push] [--real]");
+  console.error("Usage: agentping test [all|format|config_migration|final|summary|summary_fallback|logs|legacy|project|notify|claude_hooks|claude_stop|claude_modes|claude_live|push] [--real]");
   process.exit(2);
 }
 

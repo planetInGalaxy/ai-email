@@ -176,6 +176,7 @@ The notifier config stores local runtime settings:
   "ClaudeSummaryModel": "haiku",
   "summaryMinChars": 50,
   "summaryMaxChars": 100,
+  "summaryFallbackText": "摘要未生成，请看原回答",
   "llmTimeoutMs": 16000,
   "despMaxChars": -1,
   "despSeparator": "\n\n---\n\n",
@@ -215,6 +216,7 @@ export AGENTPING_SUMMARY_MODEL=gpt-5.4-mini
 export AGENTPING_CLAUDE_SUMMARY_MODEL=haiku
 export AGENTPING_SUMMARY_MIN_CHARS=50
 export AGENTPING_SUMMARY_MAX_CHARS=100
+export AGENTPING_SUMMARY_FALLBACK_TEXT='摘要未生成，请看原回答'
 export AGENTPING_LLM_TIMEOUT_MS=16000
 export AGENTPING_DESP_MAX_CHARS=-1
 export AGENTPING_DESP_SEPARATOR='\n\n---\n\n'
@@ -236,8 +238,8 @@ export AGENTPING_CLAUDE_PUSHDEER_KEY='PDU...'
 
 `AGENTPING_PUSHDEER_KEY`, `AGENTPING_KEY`, and `PUSHDEER_KEY` override the Codex key. `AGENTPING_CLAUDE_PUSHDEER_KEY` and `CLAUDE_PUSHDEER_KEY` override the Claude key. Claude never falls back to the Codex key, so source separation is preserved.
 `AGENTPING_CLAUDE_SUMMARY_MODEL` overrides the Claude summary model; the default is `haiku`.
-`AGENTPING_SUMMARY_MODEL`, `AGENTPING_SUMMARY_MIN_CHARS`, `AGENTPING_SUMMARY_MAX_CHARS`, and `AGENTPING_LLM_TIMEOUT_MS` override the stored summary settings.
-Summary length is prompt-guided, not enforced by hard truncation. If the model returns a slightly longer complete sentence, the notifier sends it as-is.
+`AGENTPING_SUMMARY_MODEL`, `AGENTPING_SUMMARY_MIN_CHARS`, `AGENTPING_SUMMARY_MAX_CHARS`, `AGENTPING_SUMMARY_FALLBACK_TEXT`, and `AGENTPING_LLM_TIMEOUT_MS` override the stored summary settings.
+Summary length is prompt-guided, not hard-truncated. A slightly longer complete sentence is accepted, but an excessively long result or an apparent copy of the final answer is rejected. Timeout, command failure, empty output, and rejected output use `summaryFallbackText`, whose default is `摘要未生成，请看原回答`.
 The summary model receives the full user prompt and full final answer so the generated notification title is based on complete context.
 `AGENTPING_DESP_MAX_CHARS` overrides the stored `desp` truncation limit. The default is `-1`, which keeps the complete rendered `desp`; positive values are capped to 1000, and `0` omits `desp`.
 `AGENTPING_DESP_SEPARATOR` overrides the marker placed before the original answer in `desp`; escaped `\n` sequences are converted to newlines. Set it to an empty string to omit the marker.
@@ -263,6 +265,7 @@ agentping config show
 agentping config set-key --platform codex --stdin
 agentping config set-key --platform claude --stdin
 agentping config set-summary-range 50 100
+agentping config set-summary-fallback "摘要未生成，请看原回答"
 agentping config set-timeout 15000
 agentping config set-desp-max -1
 agentping config set-separator "\n\n---\n\n"

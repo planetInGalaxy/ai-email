@@ -8,6 +8,7 @@ import {
   codexTransportDiagnostics,
   DEFAULT_CLAUDE_SUMMARY_MODEL,
   DEFAULT_LLM_TIMEOUT_MS,
+  DEFAULT_SUMMARY_FALLBACK_TEXT,
   DEFAULT_SUMMARY_MODEL,
   envValue,
   formatNotificationFields,
@@ -18,7 +19,6 @@ import {
   pushkeyForPlatform,
   redactText,
   sendPushDeer,
-  summarizeFinalText,
   wasAlreadySent,
 } from "./pushdeer-lib.mjs";
 
@@ -39,6 +39,19 @@ function normalizeSummary(value) {
     .replace(/[\r\n]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function summarySafetyMaxChars(summaryMaxChars) {
+  return Math.max(summaryMaxChars + 50, summaryMaxChars * 2);
+}
+
+function copiedFinalAnswerReason(summary, finalText, summaryMaxChars) {
+  if (charLength(summary) <= summaryMaxChars) return "";
+  const normalizedFinal = normalizeSummary(finalText);
+  if (!normalizedFinal) return "";
+  if (summary === normalizedFinal) return "copied_final";
+  const prefix = Array.from(normalizedFinal).slice(0, 80).join("");
+  return charLength(prefix) >= 40 && summary.startsWith(prefix) ? "copied_final" : "";
 }
 
 function summaryPrompt({ platform, summaryMinChars, summaryMaxChars }) {
@@ -168,6 +181,24 @@ export function summarizeWithLlm({ platform, finalText, userText, config, cwd = 
     const summary = normalizeSummary(command.text);
     if (!summary) return { text: "", elapsedMs, error: "empty" };
     const summaryChars = charLength(summary);
+    const hardMaxChars = summarySafetyMaxChars(config.summaryMaxChars);
+    const invalidReason = summaryChars > hardMaxChars
+      ? `too_long_${summaryChars}`
+      : copiedFinalAnswerReason(summary, finalText, config.summaryMaxChars);
+    if (invalidReason) {
+      logEvent("warn", "LLM summary rejected as invalid", {
+        platform,
+        model,
+        elapsedMs,
+        inputChars: charLength(input),
+        summaryChars,
+        summaryMaxChars: config.summaryMaxChars,
+        hardMaxChars,
+        reason: invalidReason,
+        ...diagnostics,
+      });
+      return { text: "", elapsedMs, error: invalidReason };
+    }
     logEvent("info", "LLM summary generated", {
       platform,
       model,
@@ -251,10 +282,9 @@ export async function sendCompletionNotification({
     return { sent: false, reason: "missing_platform_key" };
   }
 
-  const fallbackSummary = summarizeFinalText(finalText, config);
   const llmSummary = summarizeWithLlm({ platform, finalText, userText, config, cwd });
   const summarySource = llmSummary.text ? "llm" : "fallback";
-  const summaryText = llmSummary.text || fallbackSummary.desp;
+  const summaryText = llmSummary.text || config.summaryFallbackText || DEFAULT_SUMMARY_FALLBACK_TEXT;
   const summaryModel = platform === "claude"
     ? config.claudeSummaryModel || DEFAULT_CLAUDE_SUMMARY_MODEL
     : config.summaryModel || DEFAULT_SUMMARY_MODEL;
