@@ -19,6 +19,8 @@ import {
   DEFAULT_SUMMARY_FALLBACK_TEXT,
   DEFAULT_SUMMARY_MIN_CHARS,
   DEFAULT_TITLE_TEMPLATE,
+  DEFAULT_USAGE_FOOTER,
+  DEFAULT_USAGE_DETAIL,
   MAX_DESP_MAX_CHARS,
   NOTIFY_MODES,
   configPath as agentpingConfigPath,
@@ -28,6 +30,7 @@ import {
   statePath,
   takeChars,
 } from "../plugins/agentping/scripts/pushdeer-lib.mjs";
+import { USAGE_DETAIL_MODES } from "../plugins/agentping/scripts/usage.mjs";
 import {
   claudeHookStatus,
   claudeSettingsPath,
@@ -309,6 +312,10 @@ const checks = {
   templates: {
     ok: typeof config.titleTemplate === "string" && typeof config.despTemplate === "string",
     detail: `title ${JSON.stringify(config.titleTemplate || DEFAULT_TITLE_TEMPLATE)}, desp ${JSON.stringify(config.despTemplate || DEFAULT_DESP_TEMPLATE)}, preview ${config.finalTextPreviewHeadChars}/${config.finalTextPreviewTailChars}`,
+  },
+  usageFooter: {
+    ok: typeof config.usageFooter === "boolean" && USAGE_DETAIL_MODES.includes(config.usageDetail),
+    detail: `${config.usageFooter ? "on" : "off"}, detail ${config.usageDetail}; default ${DEFAULT_USAGE_FOOTER ? "on" : "off"}/${DEFAULT_USAGE_DETAIL}`,
   },
   projectConfig: {
     ok: true,

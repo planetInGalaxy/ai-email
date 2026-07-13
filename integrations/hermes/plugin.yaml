@@ -1,5 +1,5 @@
 name: agentping
-version: "0.6.1"
+version: "0.7.0"
 description: Send completed Hermes turns to the local AgentPing notification worker.
 provides_hooks:
   - pre_llm_call

@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import readline from "node:readline";
+import { mergeUsage, normalizeUsage } from "./usage.mjs";
 
 function contentText(content) {
   if (typeof content === "string") return content;
@@ -22,6 +23,8 @@ export async function readClaudeTranscriptCompletion(transcriptPath) {
   let userStartedAt = null;
   let assistantCompletedAt = null;
   let assistantUuid = "";
+  let model = "";
+  let usage = null;
 
   for await (const line of lines) {
     let entry;
@@ -38,11 +41,20 @@ export async function readClaudeTranscriptCompletion(transcriptPath) {
         userStartedAt = timestampMs(entry.timestamp);
         assistantCompletedAt = null;
         assistantUuid = "";
+        model = "";
+        usage = null;
       }
       continue;
     }
 
     if (entry?.type === "assistant" && userStartedAt !== null) {
+      const entryModel = String(entry.message?.model || entry.model || "").trim();
+      const entryUsage = normalizeUsage(entry.message?.usage, {
+        model: entryModel,
+        provider: "anthropic",
+      });
+      if (entryUsage) usage = mergeUsage(usage, entryUsage);
+      if (entryModel) model = entryModel;
       const text = contentText(entry.message?.content).trim();
       if (text) {
         assistantCompletedAt = timestampMs(entry.timestamp) ?? assistantCompletedAt;
@@ -60,5 +72,8 @@ export async function readClaudeTranscriptCompletion(transcriptPath) {
     assistantCompletedAt,
     assistantUuid,
     durationMs,
+    model,
+    provider: model ? "anthropic" : "",
+    usage,
   };
 }

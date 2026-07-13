@@ -21,6 +21,7 @@ import {
   sendPushDeer,
   wasAlreadySent,
 } from "./pushdeer-lib.mjs";
+import { usageLogMeta } from "./usage.mjs";
 
 export const SUMMARY_PROMPT_MARKERS = [
   "你是 AI 编程助手完成通知摘要器",
@@ -270,6 +271,7 @@ export async function sendCompletionNotification({
   terminalType = "task_complete",
   durationMs = null,
   cwd = process.cwd(),
+  event = null,
 } = {}) {
   const resolvedAgentId = agentId || platform;
   const config = loadConfig({ cwd, agentId: resolvedAgentId, agentType: platform });
@@ -317,6 +319,9 @@ export async function sendCompletionNotification({
     summarySource,
     summaryModel,
     summaryElapsedMs: llmSummary.elapsedMs,
+    model: event?.model || "",
+    provider: event?.provider || "",
+    usage: event?.usage || null,
   });
 
   await sendPushDeer({
@@ -341,6 +346,9 @@ export async function sendCompletionNotification({
     summaryModel,
     summaryElapsedMs: llmSummary.elapsedMs,
     summaryError: llmSummary.error,
+    model: event?.model || "",
+    provider: event?.provider || "",
+    ...usageLogMeta(event?.usage),
   });
   return { sent: true, summarySource };
 }

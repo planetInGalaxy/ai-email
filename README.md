@@ -16,13 +16,15 @@ Each platform adapter only converts its native completion hook into AgentPing's 
 - Sends a separator plus the original assistant answer in PushDeer `desp`, truncated to `despMaxChars`.
 - Asks the summary model for 50 to 100 Chinese characters by default.
 - Does not hard-truncate LLM summaries; semantic completeness is preferred if the model slightly exceeds the configured range.
-- Keeps approximately the first 200 and last 150 characters of the answer at punctuation boundaries, without a total `desp` limit by default.
+- Keeps approximately the first and last 100 characters of the answer at punctuation boundaries, without a total `desp` limit by default.
 - Supports notification modes: always, long tasks only, errors only, or off.
 - Supports notification templates for PushDeer `text` and `desp`.
 - Supports project-level `.agentping.json` config, without project-stored PushDeer keys.
 - Rotates local notifier logs so troubleshooting data does not grow without bound.
 - Keeps local logs privacy-safe by default; full text/stderr previews require `debugLogs`.
 - Records summary source, elapsed time, and fallback error reason in notifier logs.
+- Appends the task model and available token usage to the notification by default.
+- Aggregates Codex child-agent usage into the top-level task notification without sending child notifications.
 - Includes local self-test commands that use temporary files and dry-run PushDeer sends.
 - Stores a separate PushDeer key for every Agent outside the repository so the receiving client can distinguish sources.
 - Persists completion events in an atomic local queue, serializes concurrent sends, and recovers events left in progress after a crash.
@@ -232,6 +234,8 @@ The notifier config stores local runtime settings:
   "finalTextPreviewHeadChars": 100,
   "finalTextPreviewTailChars": 100,
   "finalTextPreviewMarker": "\n\n......\n\n",
+  "usageFooter": true,
+  "usageDetail": "compact",
   "_说明": [
     "每个配置项的中文说明由 AgentPing 自动写入此数组，与实际配置字段分开。"
   ]
@@ -270,6 +274,8 @@ export AGENTPING_DESP_TEMPLATE='{separator}>>>> ### 用时: {durationZh}\n### �
 export AGENTPING_FINAL_TEXT_PREVIEW_HEAD_CHARS=100
 export AGENTPING_FINAL_TEXT_PREVIEW_TAIL_CHARS=100
 export AGENTPING_FINAL_TEXT_PREVIEW_MARKER='\n\n......\n\n'
+export AGENTPING_USAGE_FOOTER=1
+export AGENTPING_USAGE_DETAIL=compact
 export AGENTPING_PUSHDEER_ENDPOINT=https://api2.pushdeer.com/message/push
 export AGENTPING_PUSHDEER_KEY='PDU...'
 export AGENTPING_CLAUDE_PUSHDEER_KEY='PDU...'
@@ -292,9 +298,10 @@ The summary model receives the full user prompt and full final answer so the gen
 `AGENTPING_MIN_DURATION_MS` is used by `long_only`; turns shorter than this threshold are skipped.
 `AGENTPING_LOG_MAX_BYTES` and `AGENTPING_LOG_KEEP_FILES` control local log rotation. Set `AGENTPING_LOG_MAX_BYTES=0` to disable rotation.
 `AGENTPING_DEBUG_LOGS=1` allows local logs to include redacted title/desp/stderr previews. By default logs keep operational metadata such as lengths, status, summary source, elapsed time, and errors.
-`AGENTPING_TITLE_TEMPLATE` and `AGENTPING_DESP_TEMPLATE` customize PushDeer fields. Supported placeholders are `{summary}`, `{finalText}`, `{finalTextPreview}`, `{separator}`, `{duration}`, `{durationZh}`, `{turnId}`, `{terminalType}`, `{summarySource}`, `{summaryModel}`, and `{summaryElapsedMs}`.
+`AGENTPING_TITLE_TEMPLATE` and `AGENTPING_DESP_TEMPLATE` customize PushDeer fields. Supported placeholders are `{summary}`, `{finalText}`, `{finalTextPreview}`, `{separator}`, `{duration}`, `{durationZh}`, `{turnId}`, `{terminalType}`, `{summarySource}`, `{summaryModel}`, `{summaryElapsedMs}`, `{taskModel}`, `{taskProvider}`, `{inputTokens}`, `{cachedInputTokens}`, `{cacheCreationInputTokens}`, `{outputTokens}`, `{reasoningTokens}`, `{totalTokens}`, and `{usageFooter}`.
 `{duration}` is compact English-style timing such as `12.3s`; `{durationZh}` is Chinese minute/second timing such as `0分 12秒`.
 `{finalTextPreview}` keeps approximately the first `finalTextPreviewHeadChars` characters and last `finalTextPreviewTailChars` characters, extending slightly when needed to end and begin at nearby punctuation boundaries. It inserts `finalTextPreviewMarker` between both sections.
+`usageFooter` is enabled by default. Set it to `false` to hide model and token information. AgentPing appends the left-aligned footer automatically when `despTemplate` does not contain `{usageFooter}`; add the placeholder to choose its exact position. `usageDetail` accepts `compact` or `detailed`.
 `AGENTPING_PROJECT_CONFIG=/path/to/.agentping.json` forces a project config file; `AGENTPING_DISABLE_PROJECT_CONFIG=1` disables project config discovery.
 
 Legacy `CODEX_PUSHDEER_*` variables and the old `~/.config/codex-pushdeer-notifier/config.json` config file are still read during migration. New writes go to `~/.config/agentping/config.json`.
@@ -325,6 +332,8 @@ agentping config set-mode off
 agentping config set-debug-logs off
 agentping config set-title-template "{summary}"
 agentping config set-desp-template "用时：{durationZh}{separator}{finalTextPreview}"
+agentping config set-usage-footer on
+agentping config set-usage-detail detailed
 agentping config reset-templates
 agentping config init-project
 ```
@@ -427,6 +436,8 @@ node scripts/uninstall.mjs --remove-marketplace
 ## Privacy And Security
 
 Each automatic notification summarizes the latest user prompt and complete assistant answer through the configured summary provider. Codex summaries use a temporary `codex exec`; Claude summaries use a safe, non-persistent `claude --print` process with hooks and tools disabled. OpenClaw and Hermes default to the Codex summary provider but can be configured independently. The summary text and configured answer preview are then sent to PushDeer.
+
+Usage statistics describe the original agent task, not the separate LLM call used to generate the notification summary. Codex usage is read from completed session records and includes descendant subagents. Claude usage is accumulated from the current turn's transcript entries. OpenClaw and Hermes usage is included when their completion hooks provide it. Missing fields are omitted instead of guessed.
 
 Codex summary subprocesses reuse the normal Codex login but use an HTTPS-only provider profile. Claude summary subprocesses reuse the normal Claude Code authentication while `--safe-mode` prevents recursive hooks and project customizations.
 

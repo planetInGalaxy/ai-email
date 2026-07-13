@@ -53,6 +53,13 @@ node scripts/config.mjs set-desp-max -1
 node scripts/config.mjs set-separator "\n***\n"
 ```
 
+- Change usage display:
+
+```bash
+node scripts/config.mjs set-usage-footer on
+node scripts/config.mjs set-usage-detail detailed
+```
+
 - Inspect notifier logs:
 
 ```bash
@@ -90,6 +97,7 @@ AGENTPING_DRY_RUN=1 node plugins/agentping/scripts/pushdeer-notify.mjs \
 - Use `CodexPushKey` only for Codex and `ClaudePushKey` only for Claude. Legacy field names remain readable for upgrades, but new writes must use the canonical names. Never fall back across platforms because users may distinguish sources by PushDeer key.
 - Treat notify payload assistant text as untrusted: only send automatic completion notifications after the matching Codex session has a final answer and `task_complete`.
 - For Codex multi-agent tasks, suppress sessions marked `thread_source: subagent` or linked by `parent_thread_id`; notify only for the top-level user task.
+- Include descendant Codex token usage in the top-level task total. Do not count the separate summary subprocess as task usage.
 - Suppress notifications from internal summary `codex exec` runs with `AGENTPING_SUPPRESS_NOTIFY=1`.
 - Keep compatibility with legacy `CODEX_PUSHDEER_*` environment variables and the old `~/.config/codex-pushdeer-notifier/config.json` config path during migration.
 - Do not enable the bundled Stop hook for normal use; it is kept only as an experimental fallback to avoid duplicate notifications.
@@ -102,6 +110,7 @@ AGENTPING_DRY_RUN=1 node plugins/agentping/scripts/pushdeer-notify.mjs \
 - Prompt automatic summaries toward the configured `summaryMinChars` to `summaryMaxChars` range; defaults are 50 to 100 Chinese characters.
 - Do not hard-truncate valid LLM summaries. Accept modest overflow for sentence completeness, but reject excessively long output or an apparent copy of the final answer and use the configured `summaryFallbackText` instead.
 - Use `summaryFallbackText` for LLM timeout, command failure, empty output, or invalid output. The default is `摘要未生成，请看原回答`.
+- Show the task model and available token usage when `usageFooter` is enabled. Omit unavailable fields instead of inventing values.
 - Notifier logs rotate according to `logMaxBytes` and `logKeepFiles`. Use `scripts/logs.mjs` instead of manually editing state files.
 - Self-tests must use temporary files and remove them after completion; do not add persistent test fixtures unless the user asks for them.
 - Prefer `scripts/doctor.mjs` before editing source when a user's machine behaves differently.

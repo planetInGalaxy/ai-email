@@ -1,4 +1,5 @@
 import { hashText } from "./pushdeer-lib.mjs";
+import { normalizeUsage } from "./usage.mjs";
 
 export const COMPLETION_EVENT_SCHEMA_VERSION = 1;
 export const SUPPORTED_AGENT_TYPES = ["codex", "claude", "openclaw", "hermes"];
@@ -48,17 +49,6 @@ function normalizeTerminalType(value, status) {
   return "task_failed";
 }
 
-function normalizeUsage(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const output = {};
-  for (const key of ["inputTokens", "cachedInputTokens", "outputTokens", "reportedCost"]) {
-    const numeric = Number(value[key]);
-    output[key] = Number.isFinite(numeric) && numeric >= 0 ? numeric : null;
-  }
-  output.currency = value.currency ? String(value.currency).slice(0, 12) : null;
-  return Object.values(output).some((item) => item !== null) ? output : null;
-}
-
 export function normalizeCompletionEvent(input = {}) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new Error("completion event must be an object");
@@ -83,6 +73,8 @@ export function normalizeCompletionEvent(input = {}) {
   ].join("\n");
   const eventId = cleanId(input.eventId, `${agentId}-${hashText(identitySeed).slice(0, 32)}`);
 
+  const model = String(input.model || "").trim();
+  const provider = String(input.provider || "").trim();
   return {
     schemaVersion: COMPLETION_EVENT_SCHEMA_VERSION,
     eventId,
@@ -99,10 +91,10 @@ export function normalizeCompletionEvent(input = {}) {
     durationMs: optionalDuration(input.durationMs, startedAt, completedAt),
     userText: String(input.userText || "").trim(),
     finalText,
-    model: String(input.model || "").trim(),
-    provider: String(input.provider || "").trim(),
+    model,
+    provider,
     cwd: String(input.cwd || process.cwd()),
-    usage: normalizeUsage(input.usage),
+    usage: normalizeUsage(input.usage, { model, provider }),
     metadata: input.metadata && typeof input.metadata === "object" && !Array.isArray(input.metadata)
       ? input.metadata
       : {},

@@ -28,6 +28,13 @@ def _after(session_id="", user_message="", assistant_response="", model="", plat
         return
     started = _started.pop(str(session_id), None)
     duration_ms = round((time.monotonic() - started) * 1000) if started is not None else None
+    usage = kwargs.get("usage") or kwargs.get("token_usage") or kwargs.get("usage_metadata")
+    if hasattr(usage, "model_dump"):
+        usage = usage.model_dump()
+    elif hasattr(usage, "dict"):
+        usage = usage.dict()
+    if not isinstance(usage, dict):
+        usage = {}
     event = {
         "agentId": "hermes",
         "agentType": "hermes",
@@ -39,6 +46,7 @@ def _after(session_id="", user_message="", assistant_response="", model="", plat
         "finalText": final_text,
         "model": str(model or ""),
         "provider": str(kwargs.get("provider") or ""),
+        "usage": usage or None,
         "cwd": os.getcwd(),
         "metadata": {"sourceHook": "post_llm_call", "platform": str(platform or "")},
     }

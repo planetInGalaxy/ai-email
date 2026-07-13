@@ -23,6 +23,8 @@ import {
   DEFAULT_SUMMARY_MIN_CHARS,
   DEFAULT_SUMMARY_MODEL,
   DEFAULT_TITLE_TEMPLATE,
+  DEFAULT_USAGE_FOOTER,
+  DEFAULT_USAGE_DETAIL,
   NOTIFY_MODES,
   PROJECT_CONFIG_FILES,
   configPath,
@@ -46,6 +48,10 @@ import {
   saveAgentConfigPatch,
   writeJson0600,
 } from "../plugins/agentping/scripts/pushdeer-lib.mjs";
+import {
+  USAGE_DETAIL_MODES,
+  normalizeUsageDetail,
+} from "../plugins/agentping/scripts/usage.mjs";
 
 const args = parseArgs();
 const command = args._[0] || "show";
@@ -77,12 +83,14 @@ function usage() {
     "  set-debug-logs <on|off>      Include text/stderr previews in local logs",
     "  set-title-template <text>    Configure PushDeer title template",
     "  set-desp-template <text>     Configure PushDeer desp template",
+    "  set-usage-footer <on|off>    Show or hide model/token footer",
+    "  set-usage-detail <mode>      Configure usage detail: compact|detailed",
     "  reset-templates              Restore default notification templates",
     "  init-project [path]          Create a project-level .agentping.json without secrets",
     "  reset [--forget-key]         Reset runtime options to defaults",
     "",
     `Modes: ${NOTIFY_MODES.join(", ")}`,
-    `Template placeholders: {summary}, {finalText}, {finalTextPreview}, {separator}, {duration}, {durationZh}, {turnId}, {terminalType}, {summarySource}, {summaryModel}, {summaryElapsedMs}`,
+    `Template placeholders: {summary}, {finalText}, {finalTextPreview}, {separator}, {duration}, {durationZh}, {turnId}, {terminalType}, {summarySource}, {summaryModel}, {summaryElapsedMs}, {taskModel}, {taskProvider}, {inputTokens}, {cachedInputTokens}, {cacheCreationInputTokens}, {outputTokens}, {reasoningTokens}, {totalTokens}, {usageFooter}`,
   ].join("\n"));
 }
 
@@ -123,6 +131,8 @@ function showConfig() {
     finalTextPreviewHeadChars: config.finalTextPreviewHeadChars,
     finalTextPreviewTailChars: config.finalTextPreviewTailChars,
     finalTextPreviewMarker: config.finalTextPreviewMarker,
+    usageFooter: config.usageFooter,
+    usageDetail: config.usageDetail,
   }, null, 2));
 }
 
@@ -326,6 +336,25 @@ function setDespTemplate() {
   savePatch({ despTemplate }, `Configured desp template ${JSON.stringify(despTemplate)}`);
 }
 
+function setUsageFooter() {
+  const value = rawValue(1, "value", "enabled");
+  if (value === undefined) {
+    console.error("usage footer value is required: on or off.");
+    process.exit(2);
+  }
+  const usageFooter = normalizeBoolean(value, DEFAULT_USAGE_FOOTER);
+  savePatch({ usageFooter }, `Configured usage footer ${usageFooter ? "on" : "off"}`);
+}
+
+function setUsageDetail() {
+  const rawMode = String(rawValue(1, "mode") || "").trim().toLowerCase();
+  if (!USAGE_DETAIL_MODES.includes(rawMode)) {
+    console.error(`usage detail must be one of: ${USAGE_DETAIL_MODES.join(", ")}`);
+    process.exit(2);
+  }
+  savePatch({ usageDetail: normalizeUsageDetail(rawMode) }, `Configured usage detail ${rawMode}`);
+}
+
 function resetTemplates() {
   savePatch({
     titleTemplate: DEFAULT_TITLE_TEMPLATE,
@@ -362,6 +391,8 @@ function initProjectConfig() {
     finalTextPreviewHeadChars: DEFAULT_FINAL_TEXT_PREVIEW_HEAD_CHARS,
     finalTextPreviewTailChars: DEFAULT_FINAL_TEXT_PREVIEW_TAIL_CHARS,
     finalTextPreviewMarker: DEFAULT_FINAL_TEXT_PREVIEW_MARKER,
+    usageFooter: DEFAULT_USAGE_FOOTER,
+    usageDetail: DEFAULT_USAGE_DETAIL,
   }));
   console.log(`Created project AgentPing config at ${target}`);
 }
@@ -386,6 +417,8 @@ function resetConfig() {
     finalTextPreviewHeadChars: DEFAULT_FINAL_TEXT_PREVIEW_HEAD_CHARS,
     finalTextPreviewTailChars: DEFAULT_FINAL_TEXT_PREVIEW_TAIL_CHARS,
     finalTextPreviewMarker: DEFAULT_FINAL_TEXT_PREVIEW_MARKER,
+    usageFooter: DEFAULT_USAGE_FOOTER,
+    usageDetail: DEFAULT_USAGE_DETAIL,
   };
   if (args["forget-key"]) {
     for (const agentId of Object.keys(loadConfig().agents || {})) {
@@ -458,6 +491,12 @@ switch (command) {
     break;
   case "set-desp-template":
     setDespTemplate();
+    break;
+  case "set-usage-footer":
+    setUsageFooter();
+    break;
+  case "set-usage-detail":
+    setUsageDetail();
     break;
   case "reset-templates":
     resetTemplates();

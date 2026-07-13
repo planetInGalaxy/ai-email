@@ -18,6 +18,8 @@ import {
   DEFAULT_FINAL_TEXT_PREVIEW_MARKER,
   DEFAULT_FINAL_TEXT_PREVIEW_TAIL_CHARS,
   DEFAULT_TITLE_TEMPLATE,
+  DEFAULT_USAGE_FOOTER,
+  DEFAULT_USAGE_DETAIL,
   charLength,
   codexSummaryExecArgs,
   codexTransportDiagnostics,
@@ -34,6 +36,13 @@ import {
   pushkeyForPlatform,
   saveConfigPatch,
 } from "../plugins/agentping/scripts/pushdeer-lib.mjs";
+import {
+  formatUsageFooter,
+  mergeUsage,
+  normalizeUsage,
+  usageDelta,
+} from "../plugins/agentping/scripts/usage.mjs";
+import { readClaudeTranscriptCompletion } from "../plugins/agentping/scripts/claude-transcript.mjs";
 import {
   notifyCommandForScript,
   notifyConfigStatus,
@@ -98,6 +107,7 @@ function makeTempWorkspace() {
     endpoint: "https://api2.pushdeer.com/message/push",
     summaryMinChars: 50,
     summaryMaxChars: 100,
+    usageFooter: true,
     llmTimeoutMs: 3000,
     despMaxChars: 300,
     despSeparator: DEFAULT_DESP_SEPARATOR,
@@ -133,6 +143,9 @@ function writeSession(workspace, {
   sessionId = `session-${turnId}`,
   parentThreadId = "",
   threadSource = "user",
+  model = "",
+  provider = "openai",
+  usageSequence = [],
   includeFinal = true,
   startedAt = "2026-07-08T09:00:00.000Z",
   completedAt = "2026-07-08T09:02:00.000Z",
@@ -149,6 +162,7 @@ function writeSession(workspace, {
         session_id: parentThreadId || sessionId,
         ...(parentThreadId ? { parent_thread_id: parentThreadId } : {}),
         thread_source: threadSource,
+        model_provider: provider,
         ...(threadSource === "subagent" ? {
           source: {
             subagent: {
@@ -167,6 +181,7 @@ function writeSession(workspace, {
       payload: {
         turn_id: turnId,
         cwd: workspace.cwd,
+        model,
       },
     },
     {
@@ -192,6 +207,35 @@ function writeSession(workspace, {
       },
     },
   ];
+
+  const cumulativeUsage = {
+    input_tokens: 0,
+    cached_input_tokens: 0,
+    output_tokens: 0,
+    reasoning_output_tokens: 0,
+    total_tokens: 0,
+  };
+  for (const usage of usageSequence) {
+    const lastUsage = {
+      input_tokens: Number(usage.input_tokens || 0),
+      cached_input_tokens: Number(usage.cached_input_tokens || 0),
+      output_tokens: Number(usage.output_tokens || 0),
+      reasoning_output_tokens: Number(usage.reasoning_output_tokens || 0),
+    };
+    lastUsage.total_tokens = lastUsage.input_tokens + lastUsage.output_tokens;
+    for (const field of Object.keys(cumulativeUsage)) cumulativeUsage[field] += lastUsage[field];
+    lines.push({
+      timestamp: startedAt,
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          total_token_usage: { ...cumulativeUsage },
+          last_token_usage: lastUsage,
+        },
+      },
+    });
+  }
 
   if (includeFinal) {
     lines.push(
@@ -259,6 +303,8 @@ function writeClaudeTranscript(workspace, {
   completedAt = "2026-07-08T09:00:12.500Z",
   userText = "请让 Claude 完成这个任务并总结结果",
   finalText = "Claude 已经完成任务，代码和测试均已验证通过。",
+  model = "",
+  usage = null,
 } = {}) {
   const transcriptPath = path.join(workspace.root, `${sessionId}.jsonl`);
   const lines = [
@@ -275,7 +321,12 @@ function writeClaudeTranscript(workspace, {
       sessionId,
       timestamp: completedAt,
       uuid: `${sessionId}-assistant`,
-      message: { role: "assistant", content: [{ type: "text", text: finalText }] },
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: finalText }],
+        ...(model ? { model } : {}),
+        ...(usage ? { usage } : {}),
+      },
     },
   ];
   fs.writeFileSync(transcriptPath, `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`);
@@ -341,6 +392,8 @@ function testFormatHelpers() {
   assert.equal(DEFAULT_FINAL_TEXT_PREVIEW_HEAD_CHARS, 100);
   assert.equal(DEFAULT_FINAL_TEXT_PREVIEW_TAIL_CHARS, 100);
   assert.equal(DEFAULT_FINAL_TEXT_PREVIEW_MARKER, "\n\n......\n\n");
+  assert.equal(DEFAULT_USAGE_FOOTER, true);
+  assert.equal(DEFAULT_USAGE_DETAIL, "compact");
   const documentedConfig = configWithChineseComments({
     pushkey: "codex-key",
     claudePushkey: "claude-key",
@@ -348,6 +401,7 @@ function testFormatHelpers() {
     claudeSummaryModel: "sonnet",
     summaryMinChars: 50,
     summaryMaxChars: 100,
+    usageFooter: true,
   });
   assert.equal(documentedConfig.agents.codex.PushKey, "codex-key");
   assert.equal(documentedConfig.agents.claude.PushKey, "claude-key");
@@ -357,6 +411,7 @@ function testFormatHelpers() {
   assert.ok(Array.isArray(documentedConfig._说明));
   assert.ok(documentedConfig._说明.some((line) => /summaryMinChars.*Prompt/u.test(line)));
   assert.ok(documentedConfig._说明.some((line) => /summaryMaxChars.*不会强制截断/u.test(line)));
+  assert.ok(documentedConfig._说明.some((line) => /usageFooter.*Token/u.test(line)));
   assert.equal(pushkeyForPlatform({ pushkey: "codex-key", claudePushkey: "claude-key" }, "codex"), "codex-key");
   assert.equal(pushkeyForPlatform({ pushkey: "codex-key", claudePushkey: "claude-key" }, "claude"), "claude-key");
   const { summaryMinChars, summaryMaxChars } = normalizeSummaryCharBounds(60, 30);
@@ -408,6 +463,40 @@ function testFormatHelpers() {
   });
   assert.equal(punctuatedPreview, "开头内容一。开头内容二继续补充。\n......\n最后结论完整保留。");
 
+  const fencedText = [
+    "已经完成修改，下面展示通知格式。",
+    "",
+    "```md",
+    "***",
+    "",
+    "**运行信息**: `gpt-test` · 输入 10k (缓存 8k) · 输出 1k",
+    "```",
+    "这里是会被省略的中间说明。".repeat(20),
+    "最终结论完整保留。",
+  ].join("\n");
+  const fencedPreview = formatFinalTextPreview(fencedText, {
+    headChars: 60,
+    tailChars: 20,
+    marker: "\n......\n",
+  });
+  const fencedMarkerIndex = fencedPreview.indexOf("\n......\n");
+  assert.ok(fencedMarkerIndex > 0);
+  assert.ok(fencedPreview.slice(0, fencedMarkerIndex).trimEnd().endsWith("```"));
+  assert.equal((fencedPreview.match(/^```/gmu) || []).length % 2, 0);
+
+  const tailInsideFence = [
+    "开头说明。".repeat(40),
+    "```js",
+    "const value = 1;".repeat(20),
+    "```",
+  ].join("\n");
+  const tailInsideFencePreview = formatFinalTextPreview(tailInsideFence, {
+    headChars: 20,
+    tailChars: 80,
+    marker: "\n......\n",
+  });
+  assert.equal((tailInsideFencePreview.match(/^```/gmu) || []).length % 2, 0);
+
   const unlimitedFields = formatNotificationFields({
     summary: "任务完成",
     finalText: punctuatedText,
@@ -434,6 +523,64 @@ function testFormatHelpers() {
     codexTransportDiagnostics("stream disconnected - retrying\nfalling back to HTTP", { timedOut: true }),
     { transport: "https", transportRetries: 1, timeoutStage: "transport_retry" },
   );
+
+  const openAiUsage = normalizeUsage({
+    input_tokens: 10_000,
+    cached_input_tokens: 8_000,
+    output_tokens: 1_000,
+    reasoning_output_tokens: 200,
+  }, { model: "gpt-test", provider: "openai" });
+  assert.equal(openAiUsage.inputTokens, 10_000);
+  assert.equal(openAiUsage.cachedInputTokens, 8_000);
+  const anthropicUsage = normalizeUsage({
+    input_tokens: 2,
+    cache_read_input_tokens: 1_000,
+    cache_creation_input_tokens: 100,
+    output_tokens: 50,
+  }, { model: "claude-test", provider: "anthropic" });
+  assert.equal(anthropicUsage.inputTokens, 1_102);
+  assert.equal(anthropicUsage.cacheCreationInputTokens, 100);
+  const deltaUsage = usageDelta(
+    { input_tokens: 15_000, cached_input_tokens: 12_000, output_tokens: 1_500 },
+    { input_tokens: 10_000, cached_input_tokens: 8_000, output_tokens: 1_000 },
+    null,
+    { model: "gpt-test", provider: "openai" },
+  );
+  assert.equal(deltaUsage.inputTokens, 5_000);
+  assert.equal(deltaUsage.outputTokens, 500);
+  const multiModelUsage = mergeUsage(openAiUsage, anthropicUsage);
+  assert.equal(multiModelUsage.breakdown.length, 2);
+  const footer = formatUsageFooter(openAiUsage, {
+    usageFooter: true,
+    usageDetail: "detailed",
+  });
+  assert.equal(footer, "***\n\n**运行信息**: `gpt-test` · 输入 10k (缓存 8.0k) · 输出 1.0k · 推理 200");
+  const fieldsWithUsage = formatNotificationFields({
+    summary: "任务完成",
+    finalText: "完整回答",
+    model: "gpt-test",
+    provider: "openai",
+    usage: openAiUsage,
+    config: {
+      despMaxChars: -1,
+      despTemplate: "{finalText}",
+      usageFooter: true,
+    },
+  });
+  assert.match(fieldsWithUsage.desp, /完整回答\n\n\*\*\*\n\n\*\*运行信息\*\*: `gpt-test`/u);
+  assert.equal((fieldsWithUsage.desp.match(/运行信息/gu) || []).length, 1);
+  const fieldsWithoutUsage = formatNotificationFields({
+    summary: "任务完成",
+    finalText: "完整回答",
+    model: "gpt-test",
+    usage: openAiUsage,
+    config: {
+      despMaxChars: -1,
+      despTemplate: "{finalText}",
+      usageFooter: false,
+    },
+  });
+  assert.equal(fieldsWithoutUsage.desp, "完整回答");
 }
 
 function testConfigFieldMigration() {
@@ -449,6 +596,9 @@ function testConfigFieldMigration() {
       claudeSummaryModel: "legacy-claude-model",
       summaryMinChars: 40,
       summaryMinChars__说明: "旧格式说明",
+      costMode: "reported_or_estimated",
+      costCurrency: "USD",
+      modelPricing: { "openai/gpt-test": { inputPerMillion: 1 } },
     }, null, 2)}\n`);
     process.env.AGENTPING_CONFIG = workspace.configPath;
     delete process.env.CODEX_PUSHDEER_CONFIG;
@@ -473,6 +623,11 @@ function testConfigFieldMigration() {
     assert.equal(stored.notifyMode, "long_only");
     assert.equal(stored.logMaxBytes, 2 * 1024 * 1024);
     assert.equal(stored.debugLogs, false);
+    assert.equal(stored.usageFooter, true);
+    assert.equal(stored.usageDetail, "compact");
+    assert.equal(stored.costMode, undefined);
+    assert.equal(stored.costCurrency, undefined);
+    assert.equal(stored.modelPricing, undefined);
 
     const loaded = loadConfig();
     assert.equal(loaded.pushkey, "legacy-codex-key");
@@ -480,6 +635,7 @@ function testConfigFieldMigration() {
     assert.equal(loaded.summaryModel, "legacy-codex-model");
     assert.equal(loaded.claudeSummaryModel, "legacy-claude-model");
     assert.equal(loaded.summaryMaxChars, 90);
+    assert.equal(loaded.usageFooter, true);
   } finally {
     if (previousAgentConfig === undefined) delete process.env.AGENTPING_CONFIG;
     else process.env.AGENTPING_CONFIG = previousAgentConfig;
@@ -542,6 +698,49 @@ function testSubagentNotificationSuppressed() {
     assert.match(log, /"parentSessionId":"top-level-user-session"/u);
     assert.doesNotMatch(log, /AgentPing completion event queued/u);
     assert.doesNotMatch(log, /PushDeer notify event sent/u);
+  } finally {
+    cleanupTempWorkspace(workspace);
+  }
+}
+
+function testCodexUsageIncludesSubagents() {
+  const workspace = makeTempWorkspace();
+  try {
+    const parentSessionId = "top-level-usage-session";
+    const parentTurnId = "turn-parent-usage";
+    writeSession(workspace, {
+      turnId: parentTurnId,
+      sessionId: parentSessionId,
+      model: "gpt-parent",
+      startedAt: "2026-07-08T09:00:00.000Z",
+      completedAt: "2026-07-08T09:10:00.000Z",
+      usageSequence: [{ input_tokens: 1_000, cached_input_tokens: 400, output_tokens: 100 }],
+    });
+    writeSession(workspace, {
+      turnId: "turn-child-usage",
+      sessionId: "child-usage-session",
+      parentThreadId: parentSessionId,
+      threadSource: "subagent",
+      model: "gpt-child",
+      startedAt: "2026-07-08T09:02:00.000Z",
+      completedAt: "2026-07-08T09:05:00.000Z",
+      usageSequence: [{ input_tokens: 2_000, cached_input_tokens: 1_500, output_tokens: 200 }],
+    });
+    runEvent(workspace, {
+      type: "agent-turn-complete",
+      "turn-id": parentTurnId,
+      "input-messages": [{ text: "顶层任务完成事件" }],
+    }, {
+      AGENTPING_DISABLE_LLM_SUMMARY: "1",
+    });
+
+    const log = readLog(workspace);
+    assert.match(log, /PushDeer notify event sent/u);
+    assert.match(log, /"model":"gpt-parent"/u);
+    assert.match(log, /"usageModels":2/u);
+    assert.match(log, /"usageInputTokens":3000/u);
+    assert.match(log, /"usageCachedInputTokens":1900/u);
+    assert.match(log, /"usageOutputTokens":300/u);
   } finally {
     cleanupTempWorkspace(workspace);
   }
@@ -727,12 +926,25 @@ function testClaudeHookConfigHelpers() {
   assert.equal(removed.settings.hooks.StopFailure, undefined);
 }
 
-function testClaudeStopNotification() {
+async function testClaudeStopNotification() {
   const workspace = makeTempWorkspace();
   try {
     const finalText = "Claude 已完成完整实现，保留了现有配置和使用方法，并完成了全部回归测试。";
     const userText = "适配 Claude Code，并确保最终回答会发送独立通知。";
-    const transcriptPath = writeClaudeTranscript(workspace, { userText, finalText });
+    const transcriptPath = writeClaudeTranscript(workspace, {
+      userText,
+      finalText,
+      model: "claude-test",
+      usage: {
+        input_tokens: 2,
+        cache_creation_input_tokens: 100,
+        cache_read_input_tokens: 1_000,
+        output_tokens: 50,
+      },
+    });
+    const parsedTranscript = await readClaudeTranscriptCompletion(transcriptPath);
+    assert.equal(parsedTranscript.model, "claude-test");
+    assert.equal(parsedTranscript.usage.inputTokens, 1_102);
     const summary = "Claude Code 通知适配已经完成，独立密钥、摘要、耗时判断和回归测试均正常。";
     const stub = makeStubClaude(workspace, summary);
     runClaudeEvent(workspace, {
@@ -752,6 +964,10 @@ function testClaudeStopNotification() {
     assert.match(log, /PushDeer notify event sent/u);
     assert.match(log, /"platform":"claude"/u);
     assert.match(log, /"durationMs":12500/u);
+    assert.match(log, /"model":"claude-test"/u);
+    assert.match(log, /"usageInputTokens":1102/u);
+    assert.match(log, /"usageCachedInputTokens":1000/u);
+    assert.match(log, /"usageOutputTokens":50/u);
     assert.match(log, new RegExp(summary, "u"));
     assert.ok(capture.args.includes("--safe-mode"));
     assert.ok(capture.args.includes("--no-session-persistence"));
@@ -1117,6 +1333,12 @@ function testAdapterSdkAndOpenClaw() {
     success: true,
     durationMs: 12_345,
     model: "test-model",
+    provider: "test-provider",
+    usage: {
+      input_tokens: 2_500,
+      cached_input_tokens: 2_000,
+      output_tokens: 250,
+    },
     messages: [
       { role: "user", content: [{ type: "text", text: "请完成测试" }] },
       { role: "assistant", content: [{ type: "text", text: "中间过程" }] },
@@ -1130,6 +1352,8 @@ function testAdapterSdkAndOpenClaw() {
   assert.equal(event.finalText, "测试已经完成。");
   assert.equal(event.durationMs, 12_345);
   assert.equal(event.status, "success");
+  assert.equal(event.model, "test-model");
+  assert.equal(event.usage.inputTokens, 2_500);
   assert.throws(() => normalizeCompletionEvent({ agentType: "openclaw" }), /finalText/u);
   assert.equal(pushkeyForPlatform({ pushkey: "codex-only" }, "openclaw"), "");
   assert.equal(pushkeyForPlatform({ pushkey: "codex-only" }, "hermes"), "");
@@ -1148,7 +1372,7 @@ function testHermesPluginHooks() {
     "module._ingest_script=lambda: type('P', (), {'is_file': lambda self: True})()",
     "module.subprocess.Popen=lambda args, **kwargs: captured.append(json.loads(args[2]))",
     "hooks['pre_llm_call'](session_id='hermes-session')",
-    "hooks['post_llm_call'](session_id='hermes-session', user_message='执行测试', assistant_response='Hermes 测试完成。', model='test-model', platform='cli')",
+    "hooks['post_llm_call'](session_id='hermes-session', user_message='执行测试', assistant_response='Hermes 测试完成。', model='test-model', platform='cli', provider='test-provider', usage={'input_tokens': 1200, 'output_tokens': 120})",
     "print(json.dumps({'hooks': sorted(hooks), 'event': captured[0]}, ensure_ascii=False))",
   ].join("\n");
   const result = spawnSync("python3", ["-c", script], { encoding: "utf8", stdio: "pipe" });
@@ -1158,6 +1382,8 @@ function testHermesPluginHooks() {
   assert.equal(output.event.agentId, "hermes");
   assert.equal(output.event.sessionId, "hermes-session");
   assert.equal(output.event.finalText, "Hermes 测试完成。");
+  assert.equal(output.event.provider, "test-provider");
+  assert.equal(output.event.usage.input_tokens, 1200);
   assert.ok(output.event.durationMs >= 0);
 }
 
@@ -1251,6 +1477,7 @@ const tests = {
   config_migration: () => test("config field migration", testConfigFieldMigration),
   final: () => test("final-only notification", testFinalOnlyNotification),
   subagent: () => test("Codex subagent completion is suppressed", testSubagentNotificationSuppressed),
+  codex_usage: () => test("Codex usage includes subagents", testCodexUsageIncludesSubagents),
   summary: () => test("LLM summary is used whole", testLlmSummaryIsUsedWhole),
   summary_fallback: () => test("invalid LLM summary uses fixed fallback", testInvalidLlmSummaryUsesFixedFallback),
   logs: () => test("log rotation", testLogRotation),
@@ -1275,6 +1502,7 @@ if (command === "all") {
   await tests.config_migration();
   await tests.final();
   await tests.subagent();
+  await tests.codex_usage();
   await tests.summary();
   await tests.summary_fallback();
   await tests.logs();
@@ -1294,7 +1522,7 @@ if (command === "all") {
 } else if (tests[command]) {
   await tests[command]();
 } else {
-  console.error("Usage: agentping test [all|format|config_migration|final|subagent|summary|summary_fallback|logs|queue|queue_retry|legacy|project|notify|claude_hooks|claude_stop|claude_modes|adapters|hermes|runtime|platform_install|claude_live|push] [--real]");
+  console.error("Usage: agentping test [all|format|config_migration|final|subagent|codex_usage|summary|summary_fallback|logs|queue|queue_retry|legacy|project|notify|claude_hooks|claude_stop|claude_modes|adapters|hermes|runtime|platform_install|claude_live|push] [--real]");
   process.exit(2);
 }
 

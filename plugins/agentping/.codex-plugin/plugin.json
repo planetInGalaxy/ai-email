@@ -1,6 +1,6 @@
 {
   "name": "agentping",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "Notify when AI agents finish and send concise completion summaries.",
   "author": {
     "name": "AgentPing Notifier contributors"

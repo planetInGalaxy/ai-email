@@ -2,6 +2,14 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import {
+  formatTokenCount,
+  formatUsageFooter,
+  mergeUsage,
+  normalizeUsage,
+  normalizeUsageDetail,
+  usageDelta,
+} from "./usage.mjs";
 
 export const DEFAULT_ENDPOINT = "https://api2.pushdeer.com/message/push";
 export const APP_NAME = "agentping";
@@ -26,6 +34,8 @@ export const DEFAULT_DESP_TEMPLATE = "{separator}>>>> ### 用时: {durationZh}\n
 export const DEFAULT_FINAL_TEXT_PREVIEW_HEAD_CHARS = 100;
 export const DEFAULT_FINAL_TEXT_PREVIEW_TAIL_CHARS = 100;
 export const DEFAULT_FINAL_TEXT_PREVIEW_MARKER = "\n\n......\n\n";
+export const DEFAULT_USAGE_FOOTER = true;
+export const DEFAULT_USAGE_DETAIL = "compact";
 export const CODEX_SUMMARY_PROVIDER = "agentping-openai";
 export const CODEX_SUMMARY_BASE_URL = "https://chatgpt.com/backend-api/codex";
 export const NOTIFY_MODES = ["always", "long_only", "errors_only", "off"];
@@ -87,6 +97,8 @@ const DEFAULT_STORED_CONFIG = {
   finalTextPreviewHeadChars: DEFAULT_FINAL_TEXT_PREVIEW_HEAD_CHARS,
   finalTextPreviewTailChars: DEFAULT_FINAL_TEXT_PREVIEW_TAIL_CHARS,
   finalTextPreviewMarker: DEFAULT_FINAL_TEXT_PREVIEW_MARKER,
+  usageFooter: DEFAULT_USAGE_FOOTER,
+  usageDetail: DEFAULT_USAGE_DETAIL,
 };
 
 export const CONFIG_FIELD_COMMENTS = {
@@ -109,6 +121,8 @@ export const CONFIG_FIELD_COMMENTS = {
   finalTextPreviewHeadChars: "{finalTextPreview} 保留原始回答开头的字符数。",
   finalTextPreviewTailChars: "{finalTextPreview} 保留原始回答末尾的字符数。",
   finalTextPreviewMarker: "{finalTextPreview} 省略中间内容时插入的标记。",
+  usageFooter: "是否在通知末尾显示本轮模型和可用的 Token 用量；没有可靠数据时自动省略对应字段。",
+  usageDetail: "运行信息详细程度：compact 紧凑、detailed 详细。",
 };
 
 const LEGACY_AGENT_FIELDS = {
@@ -173,6 +187,16 @@ function canonicalizeStoredConfig(config, { fillAgentDefaults = false } = {}) {
   }
   delete output.llmTimeoutMs;
   delete output.llm_timeout_ms;
+  for (const obsoleteField of [
+    "costMode",
+    "cost_mode",
+    "costCurrency",
+    "cost_currency",
+    "modelPricing",
+    "model_pricing",
+  ]) {
+    delete output[obsoleteField];
+  }
   output.agents = agents;
   if (fillAgentDefaults || output.configVersion !== undefined) output.configVersion = CONFIG_VERSION;
   return output;
@@ -594,6 +618,14 @@ export function loadConfig({ cwd = process.cwd(), agentId = "codex", agentType =
     config.finalTextPreviewMarker ??
     config.final_text_preview_marker ??
     DEFAULT_FINAL_TEXT_PREVIEW_MARKER;
+  const usageFooter = envValue("AGENTPING_USAGE_FOOTER") ??
+    config.usageFooter ??
+    config.usage_footer ??
+    DEFAULT_USAGE_FOOTER;
+  const usageDetail = envValue("AGENTPING_USAGE_DETAIL") ??
+    config.usageDetail ??
+    config.usage_detail ??
+    DEFAULT_USAGE_DETAIL;
   const summaryBounds = normalizeSummaryCharBounds(summaryMinChars, summaryMaxChars);
 
   return {
@@ -642,6 +674,8 @@ export function loadConfig({ cwd = process.cwd(), agentId = "codex", agentType =
     finalTextPreviewHeadChars: normalizePreviewChars(finalTextPreviewHeadChars, DEFAULT_FINAL_TEXT_PREVIEW_HEAD_CHARS),
     finalTextPreviewTailChars: normalizePreviewChars(finalTextPreviewTailChars, DEFAULT_FINAL_TEXT_PREVIEW_TAIL_CHARS),
     finalTextPreviewMarker: normalizeDespSeparator(finalTextPreviewMarker),
+    usageFooter: normalizeBoolean(usageFooter, DEFAULT_USAGE_FOOTER),
+    usageDetail: normalizeUsageDetail(usageDetail, DEFAULT_USAGE_DETAIL),
   };
 }
 
@@ -712,7 +746,8 @@ function redactObject(value) {
   if (typeof value !== "object") return value;
   const output = {};
   for (const [key, item] of Object.entries(value)) {
-    if (/key|secret|token|pushkey/i.test(key)) {
+    const numericTokenCount = /tokens?$/i.test(key) && typeof item === "number";
+    if (!numericTokenCount && /key|secret|token|pushkey/i.test(key)) {
       output[key] = "[REDACTED]";
     } else {
       output[key] = redactObject(item);
@@ -947,15 +982,47 @@ export function formatFinalTextPreview(finalText, {
   const chars = Array.from(text);
   const normalizedHead = normalizePreviewChars(headChars, DEFAULT_FINAL_TEXT_PREVIEW_HEAD_CHARS);
   const normalizedTail = normalizePreviewChars(tailChars, DEFAULT_FINAL_TEXT_PREVIEW_TAIL_CHARS);
-  if (chars.length <= normalizedHead + normalizedTail) return text;
+  if (chars.length <= normalizedHead + normalizedTail) return balanceMarkdownPreviewSegment(text);
   const headEnd = previewHeadBoundary(chars, normalizedHead);
   const tailStart = previewTailBoundary(chars, normalizedTail);
-  if (headEnd >= tailStart) return text;
+  if (headEnd >= tailStart) return balanceMarkdownPreviewSegment(text);
+  const head = chars.slice(0, headEnd).join("");
+  const tail = chars.slice(tailStart).join("");
+  const tailFence = markdownFenceState(chars.slice(0, tailStart).join(""));
   return [
-    chars.slice(0, headEnd).join(""),
+    balanceMarkdownPreviewSegment(head),
     normalizeDespSeparator(marker),
-    chars.slice(tailStart).join(""),
+    balanceMarkdownPreviewSegment(tail, tailFence, Boolean(tailFence)),
   ].join("");
+}
+
+function markdownFenceState(text, initialFence = null) {
+  let fence = initialFence ? { ...initialFence } : null;
+  for (const line of String(text || "").split(/\r?\n/)) {
+    const match = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/u);
+    if (!match) continue;
+    const marker = match[1];
+    if (!fence) {
+      fence = { character: marker[0], length: marker.length };
+      continue;
+    }
+    if (marker[0] === fence.character && marker.length >= fence.length && !match[2].trim()) {
+      fence = null;
+    }
+  }
+  return fence;
+}
+
+function balanceMarkdownPreviewSegment(text, initialFence = null, reopenInitialFence = false) {
+  const value = String(text || "");
+  const openingMarker = initialFence
+    ? initialFence.character.repeat(initialFence.length)
+    : "";
+  const prefix = reopenInitialFence && openingMarker ? `${openingMarker}\n` : "";
+  const endingFence = markdownFenceState(value, initialFence);
+  if (!endingFence) return `${prefix}${value}`;
+  const separator = value.endsWith("\n") || !value ? "" : "\n";
+  return `${prefix}${value}${separator}${endingFence.character.repeat(endingFence.length)}`;
 }
 
 const STRONG_PREVIEW_BOUNDARIES = new Set(["。", "！", "？", "；", ".", "!", "?", ";", "\n"]);
@@ -1008,6 +1075,9 @@ export function formatNotificationFields({
   summarySource = "",
   summaryModel = "",
   summaryElapsedMs = null,
+  model = "",
+  provider = "",
+  usage = null,
 } = {}) {
   const normalizedConfig = {
     despMaxChars: normalizeDespMaxChars(config.despMaxChars),
@@ -1017,7 +1087,16 @@ export function formatNotificationFields({
     finalTextPreviewHeadChars: normalizePreviewChars(config.finalTextPreviewHeadChars, DEFAULT_FINAL_TEXT_PREVIEW_HEAD_CHARS),
     finalTextPreviewTailChars: normalizePreviewChars(config.finalTextPreviewTailChars, DEFAULT_FINAL_TEXT_PREVIEW_TAIL_CHARS),
     finalTextPreviewMarker: normalizeDespSeparator(config.finalTextPreviewMarker ?? DEFAULT_FINAL_TEXT_PREVIEW_MARKER),
+    usageFooter: normalizeBoolean(config.usageFooter, DEFAULT_USAGE_FOOTER),
+    usageDetail: normalizeUsageDetail(config.usageDetail, DEFAULT_USAGE_DETAIL),
   };
+  const normalizedUsage = normalizeUsage(usage, { model, provider });
+  const usageFooter = formatUsageFooter(normalizedUsage, {
+    usageFooter: normalizedConfig.usageFooter,
+    usageDetail: normalizedConfig.usageDetail,
+    model,
+    provider,
+  });
   const context = {
     summary,
     finalText,
@@ -1033,6 +1112,15 @@ export function formatNotificationFields({
     summarySource,
     summaryModel,
     summaryElapsedMs,
+    taskModel: model,
+    taskProvider: provider,
+    inputTokens: formatTokenCount(normalizedUsage?.inputTokens),
+    cachedInputTokens: formatTokenCount(normalizedUsage?.cachedInputTokens),
+    cacheCreationInputTokens: formatTokenCount(normalizedUsage?.cacheCreationInputTokens),
+    outputTokens: formatTokenCount(normalizedUsage?.outputTokens),
+    reasoningTokens: formatTokenCount(normalizedUsage?.reasoningTokens),
+    totalTokens: formatTokenCount(normalizedUsage?.totalTokens),
+    usageFooter,
   };
   const title = normalizeWhitespace(renderTemplate(normalizedConfig.titleTemplate, context)) ||
     normalizeWhitespace(summary);
@@ -1042,7 +1130,11 @@ export function formatNotificationFields({
       desp: "",
     };
   }
-  const renderedDesp = renderTemplate(normalizedConfig.despTemplate, context);
+  const templateHasUsageFooter = normalizedConfig.despTemplate.includes("{usageFooter}");
+  let renderedDesp = renderTemplate(normalizedConfig.despTemplate, context);
+  if (usageFooter && !templateHasUsageFooter) {
+    renderedDesp = `${renderedDesp.trimEnd()}\n\n${usageFooter}`;
+  }
   const desp = normalizedConfig.despMaxChars < 0
     ? renderedDesp
     : takeChars(renderedDesp, normalizedConfig.despMaxChars);
@@ -1223,12 +1315,15 @@ function getTurnRecord(turns, turnId) {
       durationMs: null,
       taskComplete: false,
       userText: "",
+      model: "",
+      provider: "",
+      usage: null,
     });
   }
   return turns.get(turnId);
 }
 
-function parseFinalFromSessionFile(filePath, { cwd = "", turnId = "", requireTaskComplete = true } = {}) {
+function parseCodexSessionFile(filePath) {
   let lines = [];
   try {
     lines = fs.readFileSync(filePath, "utf8").trim().split(/\n+/);
@@ -1242,6 +1337,8 @@ function parseFinalFromSessionFile(filePath, { cwd = "", turnId = "", requireTas
   let parentSessionId = "";
   let threadSource = "";
   let isSubagent = false;
+  let provider = "";
+  let previousTotalUsage = null;
 
   for (const line of lines) {
     const item = safeJsonParse(line);
@@ -1255,20 +1352,48 @@ function parseFinalFromSessionFile(filePath, { cwd = "", turnId = "", requireTas
       ).trim();
       threadSource = String(payload.thread_source || "").trim().toLowerCase();
       isSubagent = threadSource === "subagent" || Boolean(parentSessionId) || Boolean(payload.source?.subagent);
+      provider = String(payload.model_provider || "").trim();
+    }
+
+    if (item.type === "event_msg" && payload.type === "task_started" && payload.turn_id) {
+      activeTurnId = payload.turn_id;
     }
 
     if (item.type === "turn_context" && payload) {
       activeTurnId = payload.turn_id || activeTurnId;
       const record = getTurnRecord(turns, activeTurnId);
-      if (record) record.cwd = payload.cwd || record.cwd;
+      if (record) {
+        record.cwd = payload.cwd || record.cwd;
+        record.model = String(payload.model || record.model || "").trim();
+        record.provider = provider || record.provider;
+      }
     }
 
     const itemTurnId = extractTurnId(payload) || activeTurnId;
     const record = getTurnRecord(turns, itemTurnId);
     if (!record) continue;
+    record.provider ||= provider;
 
     if (item.type === "event_msg" && payload.type === "task_started") {
       record.startedTimestamp = item.timestamp || record.startedTimestamp;
+    }
+
+    if (item.type === "event_msg" && payload.type === "thread_settings_applied" && payload.model) {
+      record.model = String(payload.model).trim() || record.model;
+    }
+
+    if (item.type === "event_msg" && payload.type === "token_count" && payload.info) {
+      const currentTotalUsage = payload.info.total_token_usage || null;
+      const fallbackUsage = payload.info.last_token_usage || null;
+      const delta = usageDelta(currentTotalUsage, previousTotalUsage, fallbackUsage, {
+        model: record.model,
+        provider: record.provider,
+      });
+      const tokenComponents = delta?.breakdown?.[0];
+      if ((tokenComponents?.inputTokens || 0) > 0 || (tokenComponents?.outputTokens || 0) > 0) {
+        record.usage = mergeUsage(record.usage, delta);
+      }
+      if (currentTotalUsage) previousTotalUsage = currentTotalUsage;
     }
 
     if (item.type === "response_item" && payload.type === "message" && payload.role === "user") {
@@ -1319,9 +1444,24 @@ function parseFinalFromSessionFile(filePath, { cwd = "", turnId = "", requireTas
     }
   }
 
+  return {
+    filePath,
+    sessionId,
+    parentSessionId,
+    threadSource,
+    isSubagent,
+    provider,
+    turns: Array.from(turns.values()),
+  };
+}
+
+function parseFinalFromSessionFile(filePath, { cwd = "", turnId = "", requireTaskComplete = true } = {}) {
+  const session = parseCodexSessionFile(filePath);
+  if (!session) return null;
+
   const candidates = turnId
-    ? [turns.get(turnId)].filter(Boolean)
-    : Array.from(turns.values())
+    ? session.turns.filter((record) => record.turnId === turnId)
+    : session.turns
       .filter((record) => {
         if (!record.finalText) return false;
         if (cwd && record.cwd && path.resolve(cwd) !== path.resolve(record.cwd)) return false;
@@ -1337,18 +1477,109 @@ function parseFinalFromSessionFile(filePath, { cwd = "", turnId = "", requireTas
     finalText: result.finalText,
     turnId: result.turnId,
     timestamp: result.finalTimestamp,
-    sessionFile: filePath,
+    sessionFile: session.filePath,
     taskComplete: result.taskComplete,
     terminalType: result.terminalType,
     startedTimestamp: result.startedTimestamp,
     terminalTimestamp: result.terminalTimestamp,
     durationMs: calculateDurationMs(result.startedTimestamp, result.terminalTimestamp),
     userText: result.userText,
-    sessionId,
-    parentSessionId,
-    threadSource,
-    isSubagent,
+    sessionId: session.sessionId,
+    parentSessionId: session.parentSessionId,
+    threadSource: session.threadSource,
+    isSubagent: session.isSubagent,
+    model: result.model,
+    provider: result.provider || session.provider,
+    usage: normalizeUsage(result.usage, {
+      model: result.model,
+      provider: result.provider || session.provider,
+    }),
   };
+}
+
+function timestampInRange(value, start, end) {
+  const timestamp = Date.parse(value || "");
+  if (!Number.isFinite(timestamp)) return false;
+  return (!Number.isFinite(start) || timestamp >= start) && (!Number.isFinite(end) || timestamp <= end);
+}
+
+function parseCodexSessionMetadata(filePath, maxBytes = 256 * 1024) {
+  let handle;
+  try {
+    handle = fs.openSync(filePath, "r");
+    const size = Math.min(fs.fstatSync(handle).size, maxBytes);
+    const buffer = Buffer.alloc(size);
+    fs.readSync(handle, buffer, 0, size, 0);
+    for (const line of buffer.toString("utf8").split("\n")) {
+      const item = safeJsonParse(line);
+      if (item?.type !== "session_meta") continue;
+      const payload = item.payload || {};
+      const sessionId = String(payload.id || payload.session_id || "").trim();
+      if (!sessionId) return null;
+      return {
+        filePath,
+        sessionId,
+        parentSessionId: String(
+          payload.parent_thread_id ||
+          payload.parentThreadId ||
+          payload.source?.subagent?.parent_thread_id ||
+          "",
+        ).trim(),
+      };
+    }
+  } catch {
+    return null;
+  } finally {
+    if (handle !== undefined) {
+      try {
+        fs.closeSync(handle);
+      } catch {
+        // Ignore a close race on a session file that changed while being read.
+      }
+    }
+  }
+  return null;
+}
+
+function aggregateCodexDescendantUsage(result, files) {
+  if (!result?.sessionId || result.isSubagent) return result?.usage || null;
+  const start = Date.parse(result.startedTimestamp || "");
+  const candidateFiles = Number.isFinite(start)
+    ? files.filter((filePath) => {
+        try {
+          return fs.statSync(filePath).mtimeMs >= start - 60_000;
+        } catch {
+          return false;
+        }
+      })
+    : files;
+  const sessions = candidateFiles
+    .map((filePath) => parseCodexSessionMetadata(filePath))
+    .filter(Boolean);
+  const descendants = new Set([result.sessionId]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const session of sessions) {
+      if (session.sessionId && descendants.has(session.parentSessionId) && !descendants.has(session.sessionId)) {
+        descendants.add(session.sessionId);
+        changed = true;
+      }
+    }
+  }
+  const end = Date.parse(result.terminalTimestamp || "");
+  const childUsage = [];
+  for (const metadata of sessions) {
+    if (metadata.sessionId === result.sessionId || !descendants.has(metadata.sessionId)) continue;
+    const session = parseCodexSessionFile(metadata.filePath);
+    if (!session) continue;
+    for (const turn of session.turns) {
+      const completedInRange = timestampInRange(turn.terminalTimestamp || turn.finalTimestamp, start, end);
+      const startedBeforeEnd = !Number.isFinite(end) || !turn.startedTimestamp || Date.parse(turn.startedTimestamp) <= end;
+      if (completedInRange && startedBeforeEnd && turn.usage) childUsage.push(turn.usage);
+    }
+  }
+  return mergeUsage(result.usage, childUsage);
 }
 
 function calculateDurationMs(startedTimestamp, terminalTimestamp) {
@@ -1380,7 +1611,15 @@ export async function findLatestFinalMessage({
         turnId,
         requireTaskComplete,
       });
-      if (result) return result;
+      if (result) {
+        if (!result.isSubagent) {
+          result.usage = aggregateCodexDescendantUsage(
+            result,
+            newestJsonlFiles(getSessionRoot(), 200),
+          );
+        }
+        return result;
+      }
     }
     attempt += 1;
     if (Date.now() > deadline) break;

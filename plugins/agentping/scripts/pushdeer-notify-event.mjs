@@ -87,6 +87,9 @@ async function main() {
     startedAt: sessionFinal.startedTimestamp,
     completedAt: sessionFinal.terminalTimestamp,
     durationMs: sessionFinal.durationMs,
+    model: sessionFinal.model,
+    provider: sessionFinal.provider,
+    usage: sessionFinal.usage,
     cwd: process.cwd(),
   });
 }

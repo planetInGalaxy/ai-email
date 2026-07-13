@@ -93,6 +93,9 @@ async function main() {
     startedAt: transcript.userStartedAt,
     completedAt: transcript.assistantCompletedAt,
     durationMs,
+    model: transcript.model,
+    provider: transcript.provider,
+    usage: transcript.usage,
     cwd: safeWorkingDirectory(hook.cwd),
   });
 }
