@@ -32,6 +32,7 @@ import {
   logEvent,
   logPath,
   normalizeNotifyMode,
+  normalizePushDeerEndpoint,
   normalizeSummaryCharBounds,
   pushkeyForPlatform,
   saveConfigPatch,
@@ -418,6 +419,16 @@ function testFormatHelpers() {
   assert.equal(summaryMinChars, 60);
   assert.equal(summaryMaxChars, 60);
   assert.equal(normalizeNotifyMode("manual"), "off");
+  assert.equal(
+    normalizePushDeerEndpoint("https://push.example.com"),
+    "https://push.example.com/message/push",
+  );
+  assert.equal(
+    normalizePushDeerEndpoint("http://127.0.0.1:8800/message/push/?ignored=1#ignored"),
+    "http://127.0.0.1:8800/message/push",
+  );
+  assert.equal(normalizePushDeerEndpoint("ftp://push.example.com", ""), "");
+  assert.equal(normalizePushDeerEndpoint("https://user:pass@push.example.com", ""), "");
   const desp = formatDesp("这是一段原始回答内容，用来验证 desp 分隔符和长度限制。", {
     maxChars: 12,
     separator: "\n-----\n",

@@ -24,6 +24,12 @@ node scripts/config.mjs set-key --platform codex --stdin
 node scripts/config.mjs set-key --platform claude --stdin
 ```
 
+- Configure a self-hosted PushDeer endpoint. A server root URL is accepted and normalized to `/message/push`:
+
+```bash
+node scripts/config.mjs set-endpoint https://push.example.com
+```
+
 - Diagnose local setup:
 
 ```bash
@@ -91,6 +97,9 @@ AGENTPING_DRY_RUN=1 node plugins/agentping/scripts/pushdeer-notify.mjs \
 ## Rules
 
 - Never write a PushDeer key into a repository file.
+- Keep the public PushDeer endpoint as the package default. Store private self-hosted endpoints only in the user config or `AGENTPING_PUSHDEER_ENDPOINT`; never hard-code a private server into distributed source.
+- Before switching to self-hosted PushDeer, verify the API, APNs delivery, HTTPS certificate, and a newly generated self-hosted PushKey. PushKeys from another PushDeer server are not transferable.
+- The upstream PushDeer repository is no longer maintained, and its bundled self-hosted iOS APNs certificate expired on 2025-01-14. Do not claim iOS delivery works unless a valid certificate or token for the client Bundle ID has been installed and a device-level push has passed.
 - Prefer `~/.config/agentping/config.json`, `AGENTPING_PUSHDEER_KEY`, or `AGENTPING_CLAUDE_PUSHDEER_KEY` for local credentials.
 - For normal Codex answers, do not send a manual notification before the final response; rely on user-level Codex `notify` so completion notifications are sent on `agent-turn-complete`.
 - For Claude Code, use `Stop` and `StopFailure` command hooks that hand work to the detached AgentPing launcher. Never replace unrelated hooks in `~/.claude/settings.json`.

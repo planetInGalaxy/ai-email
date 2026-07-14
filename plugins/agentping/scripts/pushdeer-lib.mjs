@@ -42,6 +42,25 @@ export const NOTIFY_MODES = ["always", "long_only", "errors_only", "off"];
 export const PROJECT_CONFIG_FILES = [".agentping.json", "agentping.config.json"];
 export const CONFIG_VERSION = 2;
 
+export function normalizePushDeerEndpoint(value, fallback = DEFAULT_ENDPOINT) {
+  const raw = String(value || "").trim();
+  if (!raw) return fallback;
+
+  try {
+    const url = new URL(raw);
+    if (!["http:", "https:"].includes(url.protocol) || !url.hostname || url.username || url.password) {
+      return fallback;
+    }
+    url.search = "";
+    url.hash = "";
+    const pathname = url.pathname.replace(/\/+$/u, "");
+    url.pathname = pathname || "/message/push";
+    return url.toString().replace(/\/$/u, "");
+  } catch {
+    return fallback;
+  }
+}
+
 export const DEFAULT_AGENT_CONFIGS = {
   codex: {
     type: "codex",
@@ -103,7 +122,7 @@ const DEFAULT_STORED_CONFIG = {
 
 export const CONFIG_FIELD_COMMENTS = {
   configVersion: "AgentPing 配置结构版本，由程序自动迁移，请勿手动降低。",
-  endpoint: "PushDeer 服务端的消息推送接口地址。",
+  endpoint: "PushDeer 服务端的消息推送接口地址；可使用 agentping config set-endpoint 修改。",
   agents: "各 Agent 实例的独立 Key、摘要 Provider、模型和超时配置。",
   summaryMinChars: "LLM 摘要期望的最少汉字数，会动态写入摘要 Prompt。",
   summaryMaxChars: "LLM 摘要期望的最多汉字数，会动态写入摘要 Prompt；为保证语句完整不会强制截断。",
@@ -484,11 +503,12 @@ export function loadConfig({ cwd = process.cwd(), agentId = "codex", agentType =
   const resolvedAgentId = String(agentId || agentType || "codex").trim().toLowerCase();
   const agentConfig = resolveAgentConfig(config.agents, resolvedAgentId, agentType);
   const envPrefix = agentEnvPrefix(agentConfig.type);
-  const endpoint =
+  const endpoint = normalizePushDeerEndpoint(
     envValue("AGENTPING_PUSHDEER_ENDPOINT", "AGENTPING_ENDPOINT", "PUSHDEER_ENDPOINT", "CODEX_PUSHDEER_ENDPOINT") ||
     config.pushdeerEndpoint ||
     config.endpoint ||
-    DEFAULT_ENDPOINT;
+    DEFAULT_ENDPOINT,
+  );
   const codexConfig = resolveAgentConfig(config.agents, "codex", "codex");
   const claudeConfig = resolveAgentConfig(config.agents, "claude", "claude");
   const pushkey =

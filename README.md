@@ -317,6 +317,7 @@ agentping config set-key --agent codex --stdin
 agentping config set-key --agent claude --stdin
 agentping config set-key --agent openclaw --stdin
 agentping config set-key --agent hermes --stdin
+agentping config set-endpoint https://push.example.com
 agentping config set-summary-provider codex --agent hermes
 agentping config set-summary-model gpt-5.4-mini --agent hermes
 agentping config set-timeout 16000 --agent hermes
@@ -337,6 +338,25 @@ agentping config set-usage-detail detailed
 agentping config reset-templates
 agentping config init-project
 ```
+
+## Self-hosted PushDeer
+
+AgentPing can use a private PushDeer-compatible server without changing source code. Set either the complete push API URL or the server root; AgentPing automatically appends `/message/push` when the URL has no path:
+
+```bash
+agentping config set-endpoint https://push.example.com
+agentping config show
+```
+
+To return to the public service:
+
+```bash
+agentping config reset-endpoint
+```
+
+Generate new PushKeys after connecting the client to the self-hosted server. Keys created by `api2.pushdeer.com` or another deployment do not exist in the new server database and cannot be reused there.
+
+The [upstream PushDeer repository](https://github.com/easychen/pushdeer) is no longer maintained. Its bundled self-hosted iOS APNs certificate expired on 2025-01-14, so deploying the HTTP API alone does not prove that an iPhone will receive notifications. Replace the APNs credential with one valid for the client Bundle ID and complete a real device delivery test before switching production notifications. Use HTTPS for an Internet-facing deployment.
 
 Diagnose the whole local setup:
 

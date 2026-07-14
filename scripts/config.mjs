@@ -39,6 +39,7 @@ import {
   normalizeLogMaxBytes,
   normalizeMinDurationMs,
   normalizeNotifyMode,
+  normalizePushDeerEndpoint,
   normalizeSummaryCharBounds,
   normalizeTemplate,
   parseArgs,
@@ -66,6 +67,8 @@ function usage() {
     "  set-key --key <key>          Save PushDeer key; use --agent <agentId>",
     "  set-key --stdin              Read PushDeer key from stdin",
     "  unset-key                    Remove stored PushDeer key",
+    "  set-endpoint <url>           Configure PushDeer API endpoint",
+    "  reset-endpoint               Restore the public PushDeer endpoint",
     "  set-enabled <on|off>         Enable or disable one agent config",
     "  set-summary-range <min> <max> Configure LLM summary length",
     "  set-summary-provider <name>  Configure agent summary provider: codex|claude|none",
@@ -191,6 +194,20 @@ async function setKey() {
 
 function unsetKey() {
   saveAgentPatch({ PushKey: undefined }, "Removed stored PushDeer key");
+}
+
+function setEndpoint() {
+  const value = rawValue(1, "url", "endpoint");
+  if (value === undefined) {
+    console.error("PushDeer endpoint is required.");
+    process.exit(2);
+  }
+  const endpoint = normalizePushDeerEndpoint(value, "");
+  if (!endpoint) {
+    console.error("PushDeer endpoint must be an http(s) URL without embedded credentials.");
+    process.exit(2);
+  }
+  savePatch({ endpoint }, `Configured PushDeer endpoint ${endpoint}`);
 }
 
 function setAgentEnabled() {
@@ -440,6 +457,12 @@ switch (command) {
     break;
   case "unset-key":
     unsetKey();
+    break;
+  case "set-endpoint":
+    setEndpoint();
+    break;
+  case "reset-endpoint":
+    savePatch({ endpoint: DEFAULT_ENDPOINT }, `Restored PushDeer endpoint ${DEFAULT_ENDPOINT}`);
     break;
   case "set-enabled":
     setAgentEnabled();
